@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.idea/
+.omc/
+
+# runtime data
+cache/
+temp/
+artifacts/
+*.db
+*.db-wal
+*.db-shm
+
+# large source documents (확인 후 필요하면 제거)
+docs/*.pdf
+docs/*.docx
+
+# build
+build/dist/
+dist/
+*.egg-info/

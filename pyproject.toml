@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "barrierfree"
+version = "0.1.0"
+description = "영상의 빈틈을 찾는 AI 배리어프리 점검 도구"
+requires-python = ">=3.11,<3.12"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+ignore_missing_imports = true
+
+# PyQt6의 .pyi 스텁은 `*args` 뒤에 `/`를 쓰는 문법이라 mypy가 파싱하지 못한다(서드파티 문제).
+# 스텁을 따라가지 않고 Qt 타입은 Any로 둔다. 우리 코드의 타입 검사는 그대로 유지된다.
+# PyQt6는 .pyi 스텁 패키지라서 follow_imports=skip만으로는 부족하고, 스텁에도 skip을 적용하는
+# follow_imports_for_stubs가 함께 필요하다.
+[[tool.mypy.overrides]]
+module = ["PyQt6", "PyQt6.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["barrierfree.ui.*"]
+disallow_subclassing_any = false  # Qt 클래스를 상속하므로 Any 상속을 허용한다

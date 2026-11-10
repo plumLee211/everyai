@@ -1,0 +1,14 @@
+charset-normalizer==3.5.2
+easyocr==1.7.2
+faster-whisper==1.2.1
+mypy==2.4.1
+numpy==2.4.6
+opencv-python-headless==5.0.0.93
+psutil==7.2.2
+PyQt6==6.12.0
+pytest==9.2.0
+pytest-cov==7.1.0
+pytest-qt==4.5.0
+ruff==0.17.4
+torch==2.15.0
+torchvision==0.29.2
