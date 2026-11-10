@@ -1,0 +1,33 @@
+# -*- mode: python ; coding: utf-8 -*-
+# PyInstaller onedir 설정. Windows PC에서 저장소 루트에서 실행한다:
+#   pyinstaller build/barrierfree.spec --noconfirm
+# 자세한 절차와 점검 목록은 build/README.md를 본다. (Mac에서는 검증하지 못했다.)
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+block_cipher = None
+
+datas = []
+datas += collect_data_files("easyocr")           # 문자 사전 등
+datas += collect_data_files("faster_whisper")     # VAD(silero) 모델 파일
+datas += [("ffmpeg/ffmpeg.exe", "ffmpeg"), ("ffmpeg/ffprobe.exe", "ffmpeg")]  # 사전에 내려받아 둔다
+
+hiddenimports = collect_submodules("easyocr") + collect_submodules("faster_whisper")
+
+a = Analysis(
+    ["../main.py"],
+    pathex=["../src"],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    excludes=["tests", "pytest", "mypy", "ruff"],
+    noarchive=False,
+)
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="barrierfree",
+    console=False,  # GUI 앱. 문제를 추적할 때만 True로 바꿔 콘솔을 본다.
+)
+coll = COLLECT(exe, a.binaries, a.datas, name="barrierfree")
