@@ -339,3 +339,14 @@ def test_export_csv_neutralizes_formula_injection(repo: Repository, tmp_path: Pa
     rows = _read_csv(export_csv(repo, sid, tmp_path / "x.csv"))
     cells = rows[1]
     assert not any(c.startswith(("=", "+", "-", "@")) for c in cells)
+
+
+def test_recent_sessions_lists_only_completed_ones_newest_first_up_to_the_limit(
+    repo: Repository,
+) -> None:
+    old, new, unfinished = _session(repo), _session(repo), _session(repo)
+    repo.complete_session(old, [_issue()])
+    repo.complete_session(new, [_issue()])
+    repo.set_status(unfinished, SessionStatus.FAILED, error_code="ERR-07")
+    assert [r.id for r in repo.recent_sessions()] == [new, old]
+    assert [r.id for r in repo.recent_sessions(limit=1)] == [new]

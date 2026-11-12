@@ -55,13 +55,24 @@ def test_low_memory_warning_is_shown(qtbot: QtBot) -> None:
     assert settings_dialog(qtbot).warning_label.isHidden()
 
 
-def test_advanced_settings_are_collapsed_by_default_and_toggle(qtbot: QtBot) -> None:
+def test_advanced_settings_are_always_shown_like_the_design(qtbot: QtBot) -> None:
     dialog = settings_dialog(qtbot)
-    assert dialog.advanced_box.isHidden()
-    dialog.advanced_toggle.click()
-    assert not dialog.advanced_box.isHidden()
-    dialog.advanced_toggle.click()
-    assert dialog.advanced_box.isHidden()
+    dialog.show()
+    assert dialog.advanced_box.isVisible()
+    assert dialog.model_combo.isVisible() and dialog.model_dir_edit.isVisible()
+
+
+def test_close_button_and_cancel_reject_the_dialog(qtbot: QtBot) -> None:
+    for name in ("close_button", "cancel_button"):
+        dialog = settings_dialog(qtbot)
+        getattr(dialog, name).click()
+        assert dialog.result() == 0
+
+
+def test_region_preview_follows_the_slider(qtbot: QtBot) -> None:
+    dialog = settings_dialog(qtbot)
+    dialog.ratio_slider.setValue(40)
+    assert dialog.preview._ratio == 0.4  # noqa: SLF001 - 미리보기 값을 확인한다
 
 
 def test_untouched_dialog_keeps_recommended_model_and_defaults(qtbot: QtBot) -> None:
@@ -69,7 +80,8 @@ def test_untouched_dialog_keeps_recommended_model_and_defaults(qtbot: QtBot) -> 
 
 
 def test_model_choices_include_recommended_plus_every_supported_model(qtbot: QtBot) -> None:
-    combo = settings_dialog(qtbot).model_combo
+    dialog = settings_dialog(qtbot)  # 대화상자를 붙들어 둔다(없으면 콤보박스가 먼저 삭제된다)
+    combo = dialog.model_combo
     assert combo.count() == 1 + len(SUPPORTED_MODELS)
     assert combo.itemData(0) is None  # 권장 모델 사용
     assert [combo.itemData(i) for i in range(1, combo.count())] == list(SUPPORTED_MODELS)

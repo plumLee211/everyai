@@ -30,6 +30,7 @@ from barrierfree.pipeline import AnalysisPipeline, RegionDecision, StageEvent
 from barrierfree.settings import AppSettings, apply_settings, effective_model
 from barrierfree.storage.cache import FileCache
 from barrierfree.storage.repository import Repository
+from barrierfree.ui import theme
 from barrierfree.ui.dialogs import Dialogs, QtDialogs
 from barrierfree.ui.main_window import AppServices, MainWindow
 from barrierfree.ui.player import VideoPlayerPanel
@@ -159,6 +160,8 @@ def build_services(
 def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName(APP_NAME)
+    app.setStyle("Fusion")  # 시안 스타일시트가 플랫폼 기본 모양에 가려지지 않게 한다
+    app.setStyleSheet(theme.stylesheet())
     dialogs = QtDialogs()
     if not ensure_ffmpeg(dialogs):
         return 1
