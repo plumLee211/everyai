@@ -1,4 +1,4 @@
-"""ui/review_page.py 테스트: 검수 화면(SCR-03, 세부구현.md 7장)."""
+"""ui/review_page.py 테스트: 검수 화면(SCR-03, docs/project/ui-spec.md 7장)."""
 
 from __future__ import annotations
 

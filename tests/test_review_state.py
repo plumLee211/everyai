@@ -1,4 +1,7 @@
-"""review_state.py 테스트: 검수 화면의 데이터 규칙 (세부구현.md 7.3~7.9). Qt 없이 검증한다."""
+"""review_state.py 테스트: 검수 화면의 데이터 규칙.
+
+(docs/project/ui-spec.md 7.3~7.9). Qt 없이 검증한다.
+"""
 
 from __future__ import annotations
 

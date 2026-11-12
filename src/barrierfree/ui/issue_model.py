@@ -1,4 +1,7 @@
-"""문제 목록 테이블 모델 (세부구현.md 7.5). 읽기 전용이며 검수 상태 변경은 `set_status`로만 한다."""
+"""문제 목록 테이블 모델 (docs/project/ui-spec.md 7.5).
+
+읽기 전용이며 검수 상태 변경은 `set_status`로만 한다.
+"""
 
 from __future__ import annotations
 

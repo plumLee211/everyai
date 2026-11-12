@@ -1,6 +1,6 @@
 """분석 파이프라인: 영상 1건을 끝까지 분석해 지적 목록을 저장소에 남긴다.
 
-단계(세부구현.md 6.4): 모델 준비 → 영상 준비 → 음성 인식 → 화면 문자 인식 → 자막 비교 →
+단계(docs/project/ui-spec.md 6.4): 모델 준비 → 영상 준비 → 음성 인식 → 화면 문자 인식 → 자막 비교 →
 화면 정보 비교 → 결과 정리.
 
 설계 원칙
@@ -105,7 +105,7 @@ class PipelineResult:
 
 
 class PipelineError(Exception):
-    """사용자에게 보여 줄 수 있는 분석 실패. `code`는 세부구현.md의 ERR-xx."""
+    """사용자에게 보여 줄 수 있는 분석 실패. `code`는 docs/project/ui-spec.md의 ERR-xx."""
 
     def __init__(
         self,

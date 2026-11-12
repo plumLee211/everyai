@@ -1,6 +1,6 @@
 """models.py / config.py 계약 테스트.
 
-Enum 문자열 값은 db설계초안.md의 DDL CHECK 제약과 일치해야 한다.
+Enum 문자열 값은 docs/project/database-design-draft.md의 DDL CHECK 제약과 일치해야 한다.
 """
 
 from dataclasses import FrozenInstanceError

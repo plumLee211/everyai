@@ -2,7 +2,7 @@
 ## 요구사항 정의 및 화면 상세 기획서
 
 **버전:** Draft v0.2  
-**기준:** `plan.md` 및 화면 기획서 v0.1  
+**참고:** [`product-brief.md`](product-brief.md) 및 [`screen-overview.md`](screen-overview.md)
 **플랫폼:** Windows Desktop / Python / PyQt6  
 **범위:** M1~M3  
 **문서 상태:** 화면 구성 및 주요 UX 정책 확정, 세부 구현 조건 검토 중

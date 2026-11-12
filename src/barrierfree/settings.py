@@ -16,7 +16,7 @@ from pathlib import Path
 from barrierfree.config import AnalysisConfig
 from barrierfree.engines.device import SUPPORTED_MODELS
 
-# 자막 영역(하단) 비율의 허용 범위. 세부구현.md D-05(미확정)의 임시값이다.
+# 자막 영역(하단) 비율의 허용 범위. docs/project/ui-spec.md D-05(미확정)의 임시값이다.
 MIN_REGION_RATIO = 0.10
 MAX_REGION_RATIO = 0.50
 DEFAULT_REGION_RATIO = 0.25

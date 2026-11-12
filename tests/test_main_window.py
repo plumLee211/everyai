@@ -1,4 +1,4 @@
-"""ui/main_window.py 테스트: 등록 → 분석 진행 → 검수 흐름 (세부구현.md 3장·4장)."""
+"""ui/main_window.py 테스트: 등록 → 분석 진행 → 검수 흐름 (docs/project/ui-spec.md 3장·4장)."""
 
 from __future__ import annotations
 

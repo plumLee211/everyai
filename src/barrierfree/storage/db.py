@@ -1,4 +1,4 @@
-"""SQLite 연결과 스키마 마이그레이션 (db설계초안.md 기준, 보류 상태 제거).
+"""SQLite 연결과 스키마 마이그레이션 (docs/project/database-design-draft.md 기준, 보류 상태 제거).
 
 스키마 변경은 `PRAGMA user_version` 기반의 순차 마이그레이션으로 관리한다.
 앱 업데이트마다 DB를 삭제하고 다시 만드는 방식은 쓰지 않는다.

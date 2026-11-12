@@ -1,4 +1,6 @@
-"""tests/eval/score.py 테스트: 정답 대비 탐지율·정밀도 채점 (planv2.md Task 14-1).
+"""tests/eval/score.py 테스트: 정답 대비 탐지율·정밀도 채점.
+
+(docs/project/implementation-plan.md Task 14-1).
 
 탐지율·정밀도는 자동 판정이 '오류(ERROR)'인 항목만으로 계산한다. '검수 필요'와 '판단 불가'는
 개수만 따로 센다. 정밀도 60%에서 검수 시간이 정말 줄어드는지 보려면 이 구분이 필요하다.

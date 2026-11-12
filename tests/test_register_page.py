@@ -1,4 +1,4 @@
-"""ui/register_page.py 테스트: 영상 등록 화면(SCR-01, 세부구현.md 5장)."""
+"""ui/register_page.py 테스트: 영상 등록 화면(SCR-01, docs/project/ui-spec.md 5장)."""
 
 from __future__ import annotations
 

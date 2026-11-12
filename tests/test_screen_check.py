@@ -1,4 +1,7 @@
-"""analysis/screen_check.py 테스트: M2 화면 글자 ↔ 음성 (planv2.md Task 11 케이스)."""
+"""analysis/screen_check.py 테스트: M2 화면 글자 ↔ 음성.
+
+(docs/project/implementation-plan.md Task 11 케이스).
+"""
 
 from __future__ import annotations
 

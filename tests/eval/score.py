@@ -1,4 +1,4 @@
-"""정답 대비 탐지율·정밀도 채점 (planv2.md Task 14-1, 성공 지표).
+"""정답 대비 탐지율·정밀도 채점 (docs/project/implementation-plan.md Task 14-1, 성공 지표).
 
 규칙
 - 탐지율(재현율)과 정밀도는 자동 판정이 '오류(ERROR)'인 항목만으로 계산한다.

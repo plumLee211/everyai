@@ -1,4 +1,4 @@
-"""ui/issue_model.py 테스트: 문제 목록 테이블 모델 (세부구현.md 7.5)."""
+"""ui/issue_model.py 테스트: 문제 목록 테이블 모델 (docs/project/ui-spec.md 7.5)."""
 
 from __future__ import annotations
 

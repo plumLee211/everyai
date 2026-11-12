@@ -1,4 +1,4 @@
-"""ui/progress_page.py 테스트: 분석 진행 화면(SCR-02, 세부구현.md 6장)."""
+"""ui/progress_page.py 테스트: 분석 진행 화면(SCR-02, docs/project/ui-spec.md 6장)."""
 
 from __future__ import annotations
 
