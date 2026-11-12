@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from barrierfree import paths
 from barrierfree.cancel import CancelledError, CancelToken
 from barrierfree.config import AnalysisConfig
 from barrierfree.media import ffmpeg as ff
@@ -32,10 +33,25 @@ def test_find_binary_prefers_the_ffmpeg_folder_shipped_next_to_a_frozen_app(
     shipped.mkdir()
     (shipped / "ffmpeg.exe").write_bytes(b"")
     monkeypatch.delenv("BARRIERFREE_FFMPEG_DIR", raising=False)
-    monkeypatch.setattr(ff.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(ff.sys, "executable", str(tmp_path / "barrierfree.exe"))
+    monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(paths.sys, "executable", str(tmp_path / "barrierfree.exe"))
     monkeypatch.setattr(ff.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
     assert ff.find_binary("ffmpeg") == str(shipped / "ffmpeg.exe")
+
+
+def test_find_binary_finds_ffmpeg_in_the_pyinstaller_internal_folder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # PyInstaller 6 onedir는 datas를 실행 파일 옆 `_internal`(sys._MEIPASS)에 둔다.
+    internal = tmp_path / "_internal"
+    (internal / "ffmpeg").mkdir(parents=True)
+    (internal / "ffmpeg" / "ffmpeg.exe").write_bytes(b"")
+    monkeypatch.delenv("BARRIERFREE_FFMPEG_DIR", raising=False)
+    monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(paths.sys, "_MEIPASS", str(internal), raising=False)
+    monkeypatch.setattr(paths.sys, "executable", str(tmp_path / "barrierfree.exe"))
+    monkeypatch.setattr(ff.shutil, "which", lambda _name: None)
+    assert ff.find_binary("ffmpeg") == str(internal / "ffmpeg" / "ffmpeg.exe")
 
 
 def test_find_binary_ignores_the_shipped_folder_when_not_frozen(
@@ -44,8 +60,8 @@ def test_find_binary_ignores_the_shipped_folder_when_not_frozen(
     (tmp_path / "ffmpeg").mkdir()
     (tmp_path / "ffmpeg" / "ffmpeg").write_bytes(b"")
     monkeypatch.delenv("BARRIERFREE_FFMPEG_DIR", raising=False)
-    monkeypatch.delattr(ff.sys, "frozen", raising=False)
-    monkeypatch.setattr(ff.sys, "executable", str(tmp_path / "python"))
+    monkeypatch.delattr(paths.sys, "frozen", raising=False)
+    monkeypatch.setattr(paths.sys, "executable", str(tmp_path / "python"))
     monkeypatch.setattr(ff.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
     assert ff.find_binary("ffmpeg") == "/usr/bin/ffmpeg"
 

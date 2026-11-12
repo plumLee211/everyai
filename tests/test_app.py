@@ -145,3 +145,36 @@ def test_default_data_dir_is_a_per_user_location(monkeypatch: pytest.MonkeyPatch
     path = default_data_dir()
     assert path.is_absolute()
     assert "barrierfree" in str(path).lower()
+
+
+# ---------- 동봉 모델 폴더 ----------
+
+
+def test_bundled_model_dir_is_used_when_the_user_did_not_choose_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundled = tmp_path / "동봉 모델"
+    bundled.mkdir()
+    monkeypatch.setenv("BARRIERFREE_MODEL_DIR", str(bundled))
+    services = build_services(tmp_path / "data", FakeDialogs(), device=CPU)
+    try:
+        made = pipeline(services, AppSettings())
+        assert made._stt._model_dir == str(bundled)  # noqa: SLF001
+        assert made._ocr._model_dir == str(bundled)  # noqa: SLF001
+    finally:
+        services.repo.close_all()
+
+
+def test_users_model_dir_beats_the_bundled_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    monkeypatch.setenv("BARRIERFREE_MODEL_DIR", str(bundled))
+    services = build_services(tmp_path / "data", FakeDialogs(), device=CPU)
+    try:
+        made = pipeline(services, AppSettings(model_dir="D:/mine"))
+        assert made._stt._model_dir == "D:/mine"  # noqa: SLF001
+        assert made._ocr._model_dir == "D:/mine"  # noqa: SLF001
+    finally:
+        services.repo.close_all()

@@ -11,7 +11,6 @@ import math
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -25,6 +24,7 @@ from numpy.typing import NDArray
 
 from barrierfree.cancel import CancelledError, CancelToken
 from barrierfree.config import AnalysisConfig
+from barrierfree.paths import bundle_roots
 
 Frame = NDArray[np.uint8]
 
@@ -75,13 +75,12 @@ class VideoInfo:
 
 
 def _bundled_dirs() -> list[Path]:
-    """동봉된 ffmpeg 폴더 후보: 환경변수 → (PyInstaller 배포본이면) 실행 파일 옆 ffmpeg 폴더."""
+    """동봉된 ffmpeg 폴더 후보: 환경변수 → (PyInstaller 배포본이면) 동봉 자원 폴더의 ffmpeg."""
     dirs: list[Path] = []
     override = os.environ.get("BARRIERFREE_FFMPEG_DIR")
     if override:
         dirs.append(Path(override))
-    if getattr(sys, "frozen", False):
-        dirs.append(Path(sys.executable).parent / "ffmpeg")
+    dirs.extend(root / "ffmpeg" for root in bundle_roots())
     return dirs
 
 

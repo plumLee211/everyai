@@ -14,6 +14,12 @@ datas += collect_data_files("easyocr")           # 문자 사전 등
 datas += collect_data_files("faster_whisper")     # VAD(silero) 모델 파일
 datas += [(os.path.join(ROOT, "ffmpeg", "ffmpeg.exe"), "ffmpeg"), (os.path.join(ROOT, "ffmpeg", "ffprobe.exe"), "ffmpeg")]  # 사전에 내려받아 둔다
 
+# 모델은 build/fetch_models.py로 미리 내려받아 models/에 둔다. 없으면 빌드를 멈춘다(모델 없는 배포 방지).
+_models = os.path.join(ROOT, "models")
+if not os.path.isdir(_models) or not os.listdir(_models):
+    raise SystemExit("models/ 폴더가 비어 있습니다. 먼저 `python build/fetch_models.py`를 실행하세요.")
+datas += [(_models, "models")]
+
 hiddenimports = collect_submodules("easyocr") + collect_submodules("faster_whisper")
 
 a = Analysis(
