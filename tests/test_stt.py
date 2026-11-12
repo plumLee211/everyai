@@ -151,6 +151,91 @@ def test_cancel_between_segments_stops_and_raises(tmp_path: Path) -> None:
     assert seen == ["yielded-0", "yielded-1"]  # 취소 뒤에는 더 읽지 않는다
 
 
+def _cuda_engine(
+    gpu_error: Exception, *, fail_on: str, cpu_model: FakeModel
+) -> tuple[FasterWhisperEngine, list[dict[str, Any]]]:
+    """GPU 모델은 fail_on("load"|"transcribe") 시점에 gpu_error로 실패하고 CPU 모델은 정상이다."""
+    created: list[dict[str, Any]] = []
+
+    class GpuModel(FakeModel):
+        def transcribe(self, audio: str, **kwargs: Any) -> tuple[Iterator[FakeSegment], object]:
+            raise gpu_error
+
+    def factory(name: str, **fkwargs: Any) -> FakeModel:
+        created.append({"name": name, **fkwargs})
+        if fkwargs["device"] == "cuda":
+            if fail_on == "load":
+                raise gpu_error
+            return GpuModel([])
+        return cpu_model
+
+    engine = FasterWhisperEngine(
+        "medium", device="cuda", compute_type="float16", model_factory=factory
+    )
+    return engine, created
+
+
+def test_cuda_library_missing_at_inference_falls_back_to_cpu(tmp_path: Path) -> None:
+    cpu = FakeModel([FakeSegment(0, 1, "안녕")])
+    err = RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+    engine, created = _cuda_engine(err, fail_on="transcribe", cpu_model=cpu)
+    assert [s.text for s in engine.transcribe(_audio(tmp_path))] == ["안녕"]
+    assert engine.device == "cpu"
+    assert engine.compute_type == "int8"
+    assert engine.fell_back_to_cpu is True
+    assert [c["device"] for c in created] == ["cuda", "cpu"]
+    assert all(c["name"] == "medium" for c in created)  # 모델은 바꾸지 않는다
+
+
+def test_cuda_error_at_model_load_falls_back_to_cpu(tmp_path: Path) -> None:
+    cpu = FakeModel([FakeSegment(0, 1, "안녕")])
+    err = RuntimeError("CUDA driver version is insufficient for CUDA runtime version")
+    engine, created = _cuda_engine(err, fail_on="load", cpu_model=cpu)
+    assert [s.text for s in engine.transcribe(_audio(tmp_path))] == ["안녕"]
+    assert engine.fell_back_to_cpu is True
+    assert [c["device"] for c in created] == ["cuda", "cpu"]
+
+
+def test_fallback_happens_once_and_cpu_is_reused(tmp_path: Path) -> None:
+    cpu = FakeModel([FakeSegment(0, 1, "안녕")])
+    engine, created = _cuda_engine(
+        RuntimeError("cublas not found"), fail_on="transcribe", cpu_model=cpu
+    )
+    engine.transcribe(_audio(tmp_path))
+    engine.transcribe(_audio(tmp_path))
+    assert [c["device"] for c in created] == ["cuda", "cpu"]
+
+
+def test_non_cuda_error_on_gpu_is_not_swallowed(tmp_path: Path) -> None:
+    cpu = FakeModel([FakeSegment(0, 1, "안녕")])
+    engine, created = _cuda_engine(
+        RuntimeError("decode failed"), fail_on="transcribe", cpu_model=cpu
+    )
+    with pytest.raises(SttError):
+        engine.transcribe(_audio(tmp_path))
+    assert engine.device == "cuda"
+    assert engine.fell_back_to_cpu is False
+    assert [c["device"] for c in created] == ["cuda"]
+
+
+def test_cpu_engine_never_falls_back_on_cuda_like_error(tmp_path: Path) -> None:
+    engine, created = _engine(FakeModel([], fail=True))
+    with pytest.raises(SttError):
+        engine.transcribe(_audio(tmp_path))
+    assert engine.fell_back_to_cpu is False
+    assert len(created) == 1
+
+
+def test_cpu_failure_after_fallback_is_reported(tmp_path: Path) -> None:
+    engine, _ = _cuda_engine(
+        RuntimeError("cublas not found"),
+        fail_on="transcribe",
+        cpu_model=FakeModel([], fail=True),
+    )
+    with pytest.raises(SttError):
+        engine.transcribe(_audio(tmp_path))
+
+
 def test_payload_roundtrip_preserves_values() -> None:
     segments = [
         SpeechSegment(0.0, 1.5, "안녕하세요", -0.3, 0.05),
