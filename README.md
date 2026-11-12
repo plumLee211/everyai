@@ -43,7 +43,7 @@ mypy src
 pytest
 ```
 
-GitHub Actions는 `main` 브랜치 push와 pull request에서 위 세 검사를 실행합니다.
+GitHub Actions는 `master` 브랜치 push와 pull request에서 위 세 검사를 실행합니다.
 
 ## 문서
 
