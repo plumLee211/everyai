@@ -36,13 +36,13 @@ def test_cuda_probe_failure_means_no_cuda(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_recommend_uses_gpu_when_cuda_available() -> None:
     rec = recommend_model(_info(cuda=True, ram_gb=16), AnalysisConfig())
-    assert (rec.model, rec.device, rec.compute_type) == ("medium", "cuda", "float16")
+    assert (rec.model, rec.device) == ("medium", "cuda")
     assert rec.warning is None
 
 
 def test_recommend_cpu_with_enough_ram() -> None:
     rec = recommend_model(_info(cuda=False, ram_gb=16), AnalysisConfig())
-    assert (rec.model, rec.device, rec.compute_type) == ("small", "cpu", "int8")
+    assert (rec.model, rec.device) == ("small", "cpu")
     assert rec.warning is None
 
 

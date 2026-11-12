@@ -75,7 +75,8 @@ def test_load_uses_a_local_file_url_that_keeps_korean_names(qtbot: QtBot, tmp_pa
     panel, backend = make_panel(qtbot)
     panel.load(tmp_path / "한글 영상.mp4")
     assert backend.source.isLocalFile()
-    assert backend.source.toLocalFile() == str(tmp_path / "한글 영상.mp4")
+    # Qt는 Windows에서도 '/' 구분자를 돌려주므로 문자열이 아니라 경로로 비교한다.
+    assert Path(backend.source.toLocalFile()) == tmp_path / "한글 영상.mp4"
     assert panel.source_url().endswith(".mp4")
 
 

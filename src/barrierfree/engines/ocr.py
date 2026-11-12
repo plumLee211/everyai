@@ -10,7 +10,8 @@ import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from typing import Any, Protocol
+from pathlib import Path
+from typing import Any, Protocol, cast
 
 import cv2
 import numpy as np
@@ -127,6 +128,17 @@ class EasyOcrEngine:
 
 
 # ---------- 프레임 처리 ----------
+
+
+def read_image(path: str | Path) -> Frame:
+    """이미지 파일을 BGR 프레임으로 읽는다. cv2.imread는 한글 경로를 못 읽어 바이트로 디코딩한다."""
+    try:
+        frame = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_COLOR)
+    except OSError as exc:
+        raise OcrError(f"이미지를 읽을 수 없습니다: {Path(path).name}") from exc
+    if frame is None:
+        raise OcrError(f"이미지를 읽을 수 없습니다: {Path(path).name}")
+    return cast(Frame, frame)
 
 
 def _thumbnail(frame: Frame) -> NDArray[np.int16]:

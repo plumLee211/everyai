@@ -23,7 +23,7 @@ from barrierfree.engines.device import (
     recommend_model,
 )
 from barrierfree.engines.ocr import EasyOcrEngine
-from barrierfree.engines.stt import FasterWhisperEngine
+from barrierfree.engines.stt import WhisperEngine
 from barrierfree.media.ffmpeg import FfmpegNotFoundError, find_binary
 from barrierfree.pipeline import AnalysisPipeline, RegionDecision, StageEvent
 from barrierfree.settings import AppSettings, apply_settings, effective_model
@@ -68,18 +68,15 @@ class _EngineCache:
 
     def __init__(self, recommendation: ModelRecommendation) -> None:
         self._rec = recommendation
-        self._stt: dict[tuple[str, str | None], FasterWhisperEngine] = {}
+        self._stt: dict[tuple[str, str | None], WhisperEngine] = {}
         self._ocr: dict[str | None, EasyOcrEngine] = {}
 
-    def stt(self, settings: AppSettings) -> FasterWhisperEngine:
+    def stt(self, settings: AppSettings) -> WhisperEngine:
         model = effective_model(settings, self._rec.model)
         key = (model, settings.model_dir)
         if key not in self._stt:
-            self._stt[key] = FasterWhisperEngine(
-                model,
-                device=self._rec.device,
-                compute_type=self._rec.compute_type,
-                model_dir=settings.model_dir,
+            self._stt[key] = WhisperEngine(
+                model, device=self._rec.device, model_dir=settings.model_dir
             )
         return self._stt[key]
 
@@ -119,6 +116,9 @@ def build_services(
             ocr=engines.ocr(settings),
             config=apply_settings(base_config, settings),
             data_dir=data_dir,
+            audio_dir=os.environ.get("BARRIERFREE_AUDIO_DIR") or None,
+            image_dir=os.environ.get("BARRIERFREE_IMAGE_DIR") or None,
+            ocr_dir=os.environ.get("BARRIERFREE_OCR_DIR") or None,
             confirm_region=confirm,
             on_progress=progress,
         )

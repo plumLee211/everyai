@@ -13,7 +13,7 @@ from barrierfree.ui.region_dialog import RegionDialog
 from barrierfree.ui.settings_dialog import SettingsDialog
 
 DEVICE = DeviceInfo(cpu_name="Intel i5", cpu_count=8, ram_gb=16.0, cuda_available=False)
-RECOMMENDED = ModelRecommendation("small", "cpu", "int8")
+RECOMMENDED = ModelRecommendation("small", "cpu")
 
 
 def settings_dialog(
@@ -41,14 +41,14 @@ def test_shows_device_recommendation_and_current_model(qtbot: QtBot) -> None:
 
 def test_cuda_availability_is_shown(qtbot: QtBot) -> None:
     gpu = DeviceInfo("Xeon", 16, 64.0, True)
-    rec = ModelRecommendation("medium", "cuda", "float16")
+    rec = ModelRecommendation("medium", "cuda")
     dialog = settings_dialog(qtbot, device=gpu, recommendation=rec)
     assert "사용 가능" in dialog.device_label.text()
 
 
 def test_low_memory_warning_is_shown(qtbot: QtBot) -> None:
     warning = "메모리가 적어 작은 모델을 권장합니다."
-    rec = ModelRecommendation("base", "cpu", "int8", warning=warning)
+    rec = ModelRecommendation("base", "cpu", warning=warning)
     low_memory = settings_dialog(qtbot, recommendation=rec)
     assert "메모리가 적어" in low_memory.warning_label.text()
     assert not low_memory.warning_label.isHidden()

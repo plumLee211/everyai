@@ -38,6 +38,21 @@ def test_find_binary_prefers_the_ffmpeg_folder_shipped_next_to_a_frozen_app(
     assert ff.find_binary("ffmpeg") == str(shipped / "ffmpeg.exe")
 
 
+def test_find_binary_finds_the_ffmpeg_folder_inside_the_pyinstaller_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # PyInstaller 6 onedir: datas는 실행 파일 옆이 아니라 _internal(sys._MEIPASS) 아래에 놓인다.
+    bundled = tmp_path / "_internal" / "ffmpeg"
+    bundled.mkdir(parents=True)
+    (bundled / "ffmpeg.exe").write_bytes(b"")
+    monkeypatch.delenv("BARRIERFREE_FFMPEG_DIR", raising=False)
+    monkeypatch.setattr(ff.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(ff.sys, "executable", str(tmp_path / "barrierfree.exe"))
+    monkeypatch.setattr(ff.sys, "_MEIPASS", str(tmp_path / "_internal"), raising=False)
+    monkeypatch.setattr(ff.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    assert ff.find_binary("ffmpeg") == str(bundled / "ffmpeg.exe")
+
+
 def test_find_binary_ignores_the_shipped_folder_when_not_frozen(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

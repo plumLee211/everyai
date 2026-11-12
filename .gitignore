@@ -33,3 +33,11 @@ docs/*.docx
 build/dist/
 dist/
 *.egg-info/
+
+# PyInstaller 작업 폴더와 동봉용 ffmpeg 바이너리
+build/barrierfree/
+ffmpeg/
+docs/*.mp3
+docs/*.srt
+docs/image/
+docs/ocr/

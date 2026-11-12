@@ -10,7 +10,7 @@ from barrierfree import app as app_module
 from barrierfree.app import build_services, default_data_dir, ensure_ffmpeg
 from barrierfree.engines.device import DeviceInfo
 from barrierfree.engines.ocr import EasyOcrEngine
-from barrierfree.engines.stt import FasterWhisperEngine
+from barrierfree.engines.stt import WhisperEngine
 from barrierfree.media.ffmpeg import FfmpegNotFoundError
 from barrierfree.pipeline import AnalysisPipeline
 from barrierfree.settings import AppSettings
@@ -61,8 +61,8 @@ def test_default_settings_use_the_recommended_model(tmp_path: Path) -> None:
     try:
         made = pipeline(services, AppSettings())
         stt = made._stt  # noqa: SLF001 - 조립 결과를 확인한다
-        assert isinstance(stt, FasterWhisperEngine)
-        assert (stt.model_name, stt.device, stt.compute_type) == ("small", "cpu", "int8")
+        assert isinstance(stt, WhisperEngine)
+        assert (stt.model_name, stt.device) == ("small", "cpu")
         assert isinstance(made._ocr, EasyOcrEngine)  # noqa: SLF001
     finally:
         services.repo.close_all()

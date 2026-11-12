@@ -75,13 +75,19 @@ class VideoInfo:
 
 
 def _bundled_dirs() -> list[Path]:
-    """동봉된 ffmpeg 폴더 후보: 환경변수 → (PyInstaller 배포본이면) 실행 파일 옆 ffmpeg 폴더."""
+    """동봉된 ffmpeg 폴더 후보: 환경변수 → (PyInstaller 배포본이면) 실행 파일 옆 → 번들 데이터 폴더.
+
+    PyInstaller 6 onedir은 datas를 `_internal`(sys._MEIPASS) 아래에 두므로 그곳도 찾는다.
+    """
     dirs: list[Path] = []
     override = os.environ.get("BARRIERFREE_FFMPEG_DIR")
     if override:
         dirs.append(Path(override))
     if getattr(sys, "frozen", False):
         dirs.append(Path(sys.executable).parent / "ffmpeg")
+        bundle = getattr(sys, "_MEIPASS", None)
+        if bundle:
+            dirs.append(Path(bundle) / "ffmpeg")
     return dirs
 
 
@@ -257,6 +263,90 @@ def extract_audio(
     if proc.returncode != 0 or not out.is_file():
         raise FfmpegError(f"오디오 추출에 실패했습니다: {_stderr_tail(proc.stderr)}")
     return out
+
+
+def save_audio_mp3(
+    path: str | Path, out_path: str | Path, *, cancel: CancelToken | None = None
+) -> Path:
+    """영상의 음성만 원본 음질에 가깝게(VBR 약 190kbps) MP3로 저장한다.
+
+    인식용 WAV(16kHz mono)를 다시 인코딩하지 않고 원본 영상에서 뽑는다.
+    """
+    info = probe(path)
+    if not info.has_audio:
+        raise NoAudioStreamError("영상에 오디오 트랙이 없습니다.")
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        proc = _run(
+            [
+                find_binary("ffmpeg"),
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                str(info.path),
+                "-vn",
+                "-c:a",
+                "libmp3lame",
+                "-q:a",
+                "2",
+                str(out),
+            ],
+            _AUDIO_TIMEOUT_S,
+            cancel,
+        )
+        if proc.returncode != 0 or not out.is_file():
+            raise FfmpegError(f"MP3 저장에 실패했습니다: {_stderr_tail(proc.stderr)}")
+    except BaseException:
+        out.unlink(missing_ok=True)  # 실패·취소로 남은 반쪽 파일은 지운다
+        raise
+    return out
+
+
+def save_frames_jpg(
+    path: str | Path,
+    out_dir: str | Path,
+    *,
+    interval_s: float = 1.0,
+    cancel: CancelToken | None = None,
+) -> list[Path]:
+    """영상을 `interval_s`초마다 원본 크기 JPG로 캡처한다.
+
+    파일 이름은 캡처 시각(초)이다(frame_00012.jpg = 12초). fps 필터의 타임스탬프를 그대로
+    쓰므로 1초 간격일 때 번호가 곧 초가 된다. 실패·취소하면 만든 폴더를 지운다.
+    """
+    info = probe(path)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        proc = _run(
+            [
+                find_binary("ffmpeg"),
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                str(info.path),
+                "-an",
+                "-vf",
+                f"fps=1/{interval_s:g}",
+                "-q:v",
+                "2",
+                "-frame_pts",
+                "1",
+                str(out / "frame_%05d.jpg"),
+            ],
+            _AUDIO_TIMEOUT_S,
+            cancel,
+        )
+        frames = sorted(out.glob("frame_*.jpg"))
+        if proc.returncode != 0 or not frames:
+            raise FfmpegError(f"프레임 캡처에 실패했습니다: {_stderr_tail(proc.stderr)}")
+    except BaseException:
+        shutil.rmtree(out, ignore_errors=True)
+        raise
+    return frames
 
 
 def _even(value: int) -> int:
