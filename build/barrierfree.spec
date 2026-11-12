@@ -2,20 +2,23 @@
 # PyInstaller onedir 설정. Windows PC에서 저장소 루트에서 실행한다:
 #   pyinstaller build/barrierfree.spec --noconfirm
 # 자세한 절차와 점검 목록은 build/README.md를 본다. (Mac에서는 검증하지 못했다.)
+import os
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # 저장소 루트
 
 block_cipher = None
 
 datas = []
 datas += collect_data_files("easyocr")           # 문자 사전 등
 datas += collect_data_files("faster_whisper")     # VAD(silero) 모델 파일
-datas += [("ffmpeg/ffmpeg.exe", "ffmpeg"), ("ffmpeg/ffprobe.exe", "ffmpeg")]  # 사전에 내려받아 둔다
+datas += [(os.path.join(ROOT, "ffmpeg", "ffmpeg.exe"), "ffmpeg"), (os.path.join(ROOT, "ffmpeg", "ffprobe.exe"), "ffmpeg")]  # 사전에 내려받아 둔다
 
 hiddenimports = collect_submodules("easyocr") + collect_submodules("faster_whisper")
 
 a = Analysis(
-    ["../main.py"],
-    pathex=["../src"],
+    [os.path.join(ROOT, "main.py")],
+    pathex=[os.path.join(ROOT, "src")],
     datas=datas,
     hiddenimports=hiddenimports,
     excludes=["tests", "pytest", "mypy", "ruff"],
