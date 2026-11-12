@@ -17,6 +17,16 @@ from barrierfree.config import AnalysisConfig
 SUPPORTED_MODELS = ("tiny", "base", "small", "medium", "large-v3", "turbo")
 
 
+def bundled_models(config: AnalysisConfig | None = None) -> tuple[str, ...]:
+    """배포본에 동봉되는 모델. 앱이 권장할 수 있는 모델과 같고 build/fetch_models.py가 받는다."""
+    cfg = config or AnalysisConfig()
+    return tuple(
+        dict.fromkeys(
+            (cfg.recommend_low_ram_model, cfg.recommend_cpu_model, cfg.recommend_cuda_model)
+        )
+    )
+
+
 @dataclass(frozen=True)
 class DeviceInfo:
     cpu_name: str

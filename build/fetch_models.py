@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from barrierfree.config import AnalysisConfig  # noqa: E402
+from barrierfree.engines.device import bundled_models  # noqa: E402
 
 MODELS = ROOT / "models"
 
@@ -43,10 +43,7 @@ def _download(url: str, target: Path) -> None:
 def fetch_whisper() -> None:
     from faster_whisper.utils import download_model
 
-    cfg = AnalysisConfig()
-    for name in dict.fromkeys(
-        (cfg.recommend_low_ram_model, cfg.recommend_cpu_model, cfg.recommend_cuda_model)
-    ):
+    for name in bundled_models():
         repo_dir = MODELS / f"models--Systran--faster-whisper-{name}"
         if any(repo_dir.glob("snapshots/*/model.bin")):
             print(f"whisper {name} (이미 있음)")

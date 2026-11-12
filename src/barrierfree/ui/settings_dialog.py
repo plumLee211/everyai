@@ -24,7 +24,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from barrierfree.engines.device import SUPPORTED_MODELS, DeviceInfo, ModelRecommendation
+from barrierfree.engines.device import (
+    SUPPORTED_MODELS,
+    DeviceInfo,
+    ModelRecommendation,
+    bundled_models,
+)
 from barrierfree.settings import (
     DEFAULT_REGION_RATIO,
     MAX_REGION_RATIO,
@@ -32,6 +37,11 @@ from barrierfree.settings import (
     AppSettings,
 )
 from barrierfree.ui import theme
+
+_MODEL_NOTICE = "모델을 바꾸면 인식 정확도와 처리 시간이 달라질 수 있습니다."
+_NOT_BUNDLED_NOTICE = (
+    "이 모델은 앱에 포함되어 있지 않습니다. 인터넷 연결 또는 모델 경로 지정이 필요합니다."
+)
 
 
 class RegionPreview(QWidget):
@@ -122,13 +132,13 @@ class SettingsDialog(QDialog):
 
         self.model_combo = QComboBox()
         self.model_combo.addItem(f"권장 모델 사용 ({recommendation.model})", None)
+        self._bundled = bundled_models()
         for model in SUPPORTED_MODELS:
-            self.model_combo.addItem(model, model)
+            label = model if model in self._bundled else f"{model} (내려받기 필요)"
+            self.model_combo.addItem(label, model)
         index = self.model_combo.findData(current.whisper_model)
         self.model_combo.setCurrentIndex(max(index, 0))
-        self.model_notice = theme.role(
-            QLabel("모델을 바꾸면 인식 정확도와 처리 시간이 달라질 수 있습니다."), "caption"
-        )
+        self.model_notice = theme.role(QLabel(_MODEL_NOTICE), "caption")
         self.model_notice.setWordWrap(True)
 
         self.model_dir_edit = QLineEdit(current.model_dir or "")
@@ -215,6 +225,9 @@ class SettingsDialog(QDialog):
         chosen = self._chosen_model()
         self.current_model_label.setText(f"현재 모델: {chosen or self._recommendation.model}")
         self.model_notice.setHidden(chosen is None)
+        self.model_notice.setText(
+            _MODEL_NOTICE if chosen is None or chosen in self._bundled else _NOT_BUNDLED_NOTICE
+        )
         self.ratio_label.setText(f"영상 하단 {self.ratio_slider.value()}%")
         self.preview.set_ratio(self.ratio_slider.value() / 100)
 

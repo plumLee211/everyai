@@ -6,7 +6,12 @@ import pytest
 from pytestqt.qtbot import QtBot
 
 from barrierfree.analysis.subtitle_region import RegionEstimate, region_rect
-from barrierfree.engines.device import SUPPORTED_MODELS, DeviceInfo, ModelRecommendation
+from barrierfree.engines.device import (
+    SUPPORTED_MODELS,
+    DeviceInfo,
+    ModelRecommendation,
+    bundled_models,
+)
 from barrierfree.pipeline import RegionAction
 from barrierfree.settings import MAX_REGION_RATIO, MIN_REGION_RATIO, AppSettings
 from barrierfree.ui.region_dialog import RegionDialog
@@ -208,3 +213,19 @@ def test_without_samples_the_dialog_says_nothing_was_read(qtbot: QtBot) -> None:
 def test_summary_describes_the_estimate_without_claiming_certainty(qtbot: QtBot) -> None:
     dialog = region_dialog(qtbot, estimate(True))
     assert "추정" in dialog.summary_label.text()
+
+
+def test_models_not_bundled_are_labelled_and_warn_about_download(qtbot: QtBot) -> None:
+    dialog = settings_dialog(qtbot)
+    combo = dialog.model_combo
+    for model in SUPPORTED_MODELS:
+        text = combo.itemText(combo.findData(model))
+        assert ("내려받기 필요" in text) == (model not in bundled_models())
+    dialog.model_combo.setCurrentIndex(combo.findData("large-v3"))
+    assert "포함되어 있지 않습니다" in dialog.model_notice.text()
+
+
+def test_bundled_model_keeps_the_trade_off_notice(qtbot: QtBot) -> None:
+    dialog = settings_dialog(qtbot)
+    dialog.model_combo.setCurrentIndex(dialog.model_combo.findData("small"))
+    assert "처리 시간" in dialog.model_notice.text()
