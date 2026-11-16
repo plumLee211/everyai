@@ -33,7 +33,7 @@ COLORS = {
     "player_fg": "#F2F4F8",
 }
 
-FONT_FAMILY = '"Pretendard", "Malgun Gothic", "Segoe UI", sans-serif'
+FONT_FAMILY = '"Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif'
 
 TONES = ("success", "warn", "danger", "info", "neutral")
 
