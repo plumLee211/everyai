@@ -41,7 +41,7 @@ from barrierfree.ui.register_page import RegisterPage
 from tests.fakes import FakeDialogs, FakePlayer
 
 DEVICE = DeviceInfo("Intel i5", 8, 16.0, False)
-RECOMMENDED = ModelRecommendation("small", "cpu")
+RECOMMENDED = ModelRecommendation("small", "cpu", "int8")
 ESTIMATE = RegionEstimate(True, 0.8, region_rect(0.25), 10, 12.0, 0.9, 0.7, ("자막",))
 
 
