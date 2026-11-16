@@ -28,14 +28,22 @@ Windows 패키징 절차와 미검증 항목은 [`build/README.md`](build/README
 
 ## 개발
 
-개발 도구와 커밋 hook은 아래처럼 설치합니다. Gitleaks 8.30.0도 별도로 설치해야 합니다.
+개발 도구와 git hook은 아래처럼 설치합니다. Gitleaks 8.30.0도 별도로 설치해야 합니다.
 
 ```bash
 python -m pip install -r requirements-dev.txt
-pre-commit install
+pre-commit install   # 커밋 hook과 push hook이 함께 설치된다
 ```
 
-Gitleaks는 [공식 v8.30.0 릴리스](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.0)에서 설치하세요. 커밋 전 hook은 Ruff와 staged 변경의 비밀정보 패턴을 검사합니다.
+Gitleaks는 [공식 v8.30.0 릴리스](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.0)에서 설치하세요.
+
+| 시점 | 실행하는 검사 | 걸리는 시간 |
+|---|---|---|
+| 커밋 | Ruff, mypy, Gitleaks(staged 변경의 비밀정보 패턴) | 수 초 |
+| push | 전체 pytest | 1~2분 |
+
+- hook은 `.venv`를 활성화한 터미널에서 실행해야 합니다. GitHub Desktop 같은 GUI는 `.venv`가 PATH에 없어 `ruff: command not found`로 실패할 수 있습니다.
+- hook은 각자 설치해야 동작하고 `--no-verify`로 건너뛸 수 있으므로, 최종 기준은 CI입니다.
 
 ```bash
 ruff check .
