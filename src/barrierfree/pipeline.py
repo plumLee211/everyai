@@ -39,6 +39,7 @@ from barrierfree.engines.ocr import (
     merge_observations,
     observations_from_payload,
     observations_to_payload,
+    read_image,
     run_ocr,
 )
 from barrierfree.engines.stt import (
@@ -46,6 +47,7 @@ from barrierfree.engines.stt import (
     SttModelError,
     segments_from_payload,
     segments_to_payload,
+    write_whisper_srt,
 )
 from barrierfree.media.ffmpeg import (
     FfmpegError,
@@ -56,6 +58,8 @@ from barrierfree.media.ffmpeg import (
     VideoTooLongError,
     extract_audio,
     iter_frames,
+    save_audio_mp3,
+    save_frames_jpg,
     validate_video,
 )
 from barrierfree.media.subtitles import LoadedSubtitle, SubtitleError, load_subtitle_file, write_srt
@@ -190,6 +194,14 @@ def explain_error(exc: BaseException) -> PipelineError:
     return _to_error(exc, None, None)
 
 
+_CAPTURE_INTERVAL_S = 1.0  # 결과 확인용 화면 캡처 간격(초)
+
+
+def _capture_time(image: Path) -> float:
+    """캡처 파일 이름(frame_00012.jpg)의 번호로 시각(초)을 구한다. 번호는 캡처 순번이다."""
+    return int(image.stem.rsplit("_", 1)[-1]) * _CAPTURE_INTERVAL_S
+
+
 def _remap_strip(observations: list[OcrObservation], ratio: float) -> list[OcrObservation]:
     """하단 띠(crop) 기준 좌표를 전체 프레임 기준 좌표로 바꾼다."""
     top = 1.0 - ratio
@@ -219,6 +231,9 @@ class AnalysisPipeline:
         ocr: PipelineOcr,
         config: AnalysisConfig,
         data_dir: str | Path,
+        audio_dir: str | Path | None = None,
+        image_dir: str | Path | None = None,
+        ocr_dir: str | Path | None = None,
         confirm_region: ConfirmRegion | None = None,
         on_progress: Progress | None = None,
         frame_source: FrameSource | None = None,
@@ -229,6 +244,12 @@ class AnalysisPipeline:
         self._ocr = ocr
         self._config = config
         self._data_dir = Path(data_dir)
+        # 추출한 음성(MP3)을 남길 폴더. 지정하지 않으면 데이터 폴더 아래 audio.
+        self._audio_dir = Path(audio_dir) if audio_dir else self._data_dir / "audio"
+        # 1초 간격 화면 캡처(JPG)를 남길 폴더. 지정하지 않으면 데이터 폴더 아래 image.
+        self._image_dir = Path(image_dir) if image_dir else self._data_dir / "image"
+        # 캡처 이미지의 OCR 결과(SRT)를 남길 폴더. 지정하지 않으면 데이터 폴더 아래 ocr.
+        self._ocr_dir = Path(ocr_dir) if ocr_dir else self._data_dir / "ocr"
         self._confirm = confirm_region
         self._progress = on_progress
         self._frames = frame_source or _default_frame_source
@@ -372,11 +393,20 @@ class AnalysisPipeline:
         speech: list[SpeechSegment] = []
         stt_hit = False
         if audio is not None:
+            self._stage = Stage.STT
+            # 편집자가 따로 들어 볼 수 있도록 음성만 MP3로 남긴다. 실패해도 분석은 계속한다.
+            mp3: Path | None = None
+            try:
+                mp3 = save_audio_mp3(
+                    path, self._audio_dir / f"{path.stem}_{session_id}.mp3", cancel=cancel
+                )
+            except (FfmpegError, OSError):
+                notices.append("음성 파일(MP3)을 저장하지 못했습니다.")
             self._prepare_model(self._stt, "음성 인식 모델을 준비하는 중입니다.")
             self._stage = Stage.STT
             key = make_key(
                 sha, CacheType.STT, self._stt.engine_name, self._stt.model_name,
-                {"language": "ko", "vad": True, "condition_on_previous_text": False},
+                {"language": "ko", "condition_on_previous_text": False},
             )
             speech, stt_hit = self._cached(
                 key,
@@ -384,12 +414,66 @@ class AnalysisPipeline:
                 segments_to_payload,
                 segments_from_payload,
             )
+            # MP3 옆에 같은 이름의 SRT로 인식 결과를 남긴다. 실패해도 분석은 계속한다.
+            if mp3 is not None:
+                try:
+                    write_whisper_srt(speech, mp3.with_suffix(".srt"))
+                except (OSError, ImportError):
+                    notices.append("음성 인식 자막 파일(SRT)을 저장하지 못했습니다.")
         else:
             notices.append("영상에 오디오 트랙이 없어 음성 인식을 건너뛰었습니다.")
         self._measure(session_id, Stage.STT, started, cache_hit=stt_hit, count=len(speech),
                       unit="SEGMENT")
         self._emit(Stage.STT, "DONE", 1.0, "음성 인식을 마쳤습니다.")
         cancel.raise_if_cancelled()
+
+        # 3. 화면 캡처: 결과 확인용으로 1초마다 원본 크기 프레임을 JPG로 남긴다. 실패해도 계속한다.
+        self._stage = Stage.OCR
+        self._emit(Stage.OCR, "RUNNING", None, "화면을 1초마다 캡처하는 중입니다.")
+        captured: list[Path] = []
+        try:
+            captured = save_frames_jpg(
+                path, self._image_dir / f"{path.stem}_{session_id}",
+                interval_s=_CAPTURE_INTERVAL_S, cancel=cancel,
+            )
+        except (FfmpegError, OSError):
+            notices.append("화면 캡처 이미지를 저장하지 못했습니다.")
+        cancel.raise_if_cancelled()
+
+        # 4. 캡처 이미지 OCR: 같은 글자가 이어진 구간을 자막 한 줄로 묶어 SRT로 남긴다.
+        if captured:
+            self._prepare_model(self._ocr, "화면 글자 인식 모델을 준비하는 중입니다.")
+            self._stage = Stage.OCR
+            self._emit(Stage.OCR, "RUNNING", 0.0, "캡처한 화면의 글자를 인식하는 중입니다.")
+            key = make_key(
+                sha, CacheType.OCR, self._ocr.engine_name, self._ocr.model_name,
+                {"mode": "capture", "interval": _CAPTURE_INTERVAL_S,
+                 "diff": cfg.frame_diff_skip_threshold},
+            )
+
+            def captured_frames() -> Iterator[tuple[float, Frame]]:
+                for i, image in enumerate(captured):
+                    self._emit(Stage.OCR, "RUNNING", i / len(captured),
+                               "캡처한 화면의 글자를 인식하는 중입니다.")
+                    yield _capture_time(image), read_image(image)
+
+            observations, _ = self._cached(
+                key,
+                lambda: run_ocr(captured_frames(), self._ocr, cfg, cancel=cancel),
+                observations_to_payload,
+                observations_from_payload,
+            )
+            merged = merge_observations(observations, cfg, _CAPTURE_INTERVAL_S)
+            try:
+                write_srt(
+                    extract_cues(merged.texts),
+                    self._ocr_dir / f"{path.stem}_{session_id}.srt",
+                )
+            except OSError:
+                notices.append("화면 글자 자막 파일(SRT)을 저장하지 못했습니다.")
+            self._emit(Stage.OCR, "DONE", 1.0, "캡처한 화면의 글자 인식을 마쳤습니다.")
+        cancel.raise_if_cancelled()
+        '''
 
         # 3. 화면 문자 인식 (+ 자막 파일이 없으면 하단 자막 영역 스캔)
         started = time.perf_counter()
@@ -461,6 +545,7 @@ class AnalysisPipeline:
             pass  # 측정은 부가 정보다. 이미 저장·완료된 분석을 실패로 뒤집지 않는다.
         self._emit(Stage.RESULT_SAVE, "DONE", 1.0, "분석을 마쳤습니다.")
         return PipelineResult(session_id, len(issues), source, notices)
+        '''
 
     # ----- OCR -----
 

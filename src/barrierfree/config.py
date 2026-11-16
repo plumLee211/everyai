@@ -13,7 +13,6 @@ class AnalysisConfig:
 
     # --- 모델 ---
     whisper_model: str = "small"  # 임시 기본값, Task 0 실측 후 확정
-    whisper_compute_type_cpu: str = "int8"
     model_dir: str | None = None  # 모델 경로 설정(결정 3)
 
     # --- STT 신뢰도 ---
