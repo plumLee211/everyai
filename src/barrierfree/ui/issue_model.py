@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt
+from PyQt6.QtGui import QBrush, QColor
 
 from barrierfree.models import (
     ISSUE_KIND_LABELS,
@@ -17,6 +18,13 @@ from barrierfree.models import (
     ReviewStatus,
 )
 from barrierfree.review_state import GROUP_BY_SOURCE, GROUP_LABELS, IssueFilter, ReviewState
+from barrierfree.ui import theme
+
+_STATUS_COLORS = {
+    ReviewStatus.UNREVIEWED: theme.COLORS["warn_fg"],
+    ReviewStatus.CONFIRMED: theme.COLORS["success_fg"],
+    ReviewStatus.DISMISSED: theme.COLORS["danger_fg"],
+}
 
 COLUMNS = ("시간", "유형", "내용", "AI 판정", "상태")
 ISSUE_ID_ROLE = Qt.ItemDataRole.UserRole
@@ -64,6 +72,12 @@ class IssueTableModel(QAbstractTableModel):
             return issue.id
         if role == Qt.ItemDataRole.ToolTipRole and index.column() == 2:
             return issue.reason
+        if role == Qt.ItemDataRole.ForegroundRole:
+            if index.column() == 0:
+                return QBrush(QColor(theme.COLORS["primary"]))
+            if index.column() == 4:
+                return QBrush(QColor(_STATUS_COLORS[issue.review_status]))
+            return None
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         column = index.column()

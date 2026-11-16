@@ -66,7 +66,7 @@ def test_valid_video_shows_name_and_duration_and_enables_start(qtbot: QtBot) -> 
     page = make_page(qtbot)
     page.set_video(Path("/v/안내 영상.mp4"))
     assert "안내 영상.mp4" in page.video_info_label.text()
-    assert "02:05" in page.video_info_label.text()
+    assert "02:05" in page.video_meta_label.text()
     assert page.start_button.isEnabled()
     assert page.video_path == Path("/v/안내 영상.mp4")
 
@@ -212,8 +212,9 @@ def test_busy_page_disables_every_input(qtbot: QtBot) -> None:
 
 def test_settings_button_and_summary(qtbot: QtBot) -> None:
     page = make_page(qtbot)
-    page.set_settings_summary("모델: small · 실행 장치: CPU")
-    assert "small" in page.settings_summary_label.text()
+    page.set_settings_summary(device="자동 감지 · CPU", model="small")
+    assert "small" in page.model_value_label.text()
+    assert "CPU" in page.device_value_label.text()
     with qtbot.waitSignal(page.settings_requested):
         page.settings_button.click()
 

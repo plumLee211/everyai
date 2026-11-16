@@ -23,12 +23,14 @@ from barrierfree.engines.device import (
     recommend_model,
 )
 from barrierfree.engines.ocr import EasyOcrEngine
-from barrierfree.engines.stt import WhisperEngine
+from barrierfree.engines.stt import FasterWhisperEngine
 from barrierfree.media.ffmpeg import FfmpegNotFoundError, find_binary
+from barrierfree.paths import bundled_model_dir
 from barrierfree.pipeline import AnalysisPipeline, RegionDecision, StageEvent
 from barrierfree.settings import AppSettings, apply_settings, effective_model
 from barrierfree.storage.cache import FileCache
 from barrierfree.storage.repository import Repository
+from barrierfree.ui import theme
 from barrierfree.ui.dialogs import Dialogs, QtDialogs
 from barrierfree.ui.main_window import AppServices, MainWindow
 from barrierfree.ui.player import VideoPlayerPanel
@@ -68,24 +70,34 @@ class _EngineCache:
 
     def __init__(self, recommendation: ModelRecommendation) -> None:
         self._rec = recommendation
-        self._stt: dict[tuple[str, str | None], WhisperEngine] = {}
+        self._bundled_dir = bundled_model_dir()
+        self._stt: dict[tuple[str, str | None], FasterWhisperEngine] = {}
         self._ocr: dict[str | None, EasyOcrEngine] = {}
 
-    def stt(self, settings: AppSettings) -> WhisperEngine:
+    def stt(self, settings: AppSettings) -> FasterWhisperEngine:
         model = effective_model(settings, self._rec.model)
-        key = (model, settings.model_dir)
+        model_dir = self._model_dir(settings)
+        key = (model, model_dir)
         if key not in self._stt:
-            self._stt[key] = WhisperEngine(
-                model, device=self._rec.device, model_dir=settings.model_dir
+            self._stt[key] = FasterWhisperEngine(
+                model,
+                device=self._rec.device,
+                compute_type=self._rec.compute_type,
+                model_dir=model_dir,
             )
         return self._stt[key]
 
     def ocr(self, settings: AppSettings) -> EasyOcrEngine:
-        if settings.model_dir not in self._ocr:
-            self._ocr[settings.model_dir] = EasyOcrEngine(
-                gpu=self._rec.device == "cuda", model_dir=settings.model_dir
+        model_dir = self._model_dir(settings)
+        if model_dir not in self._ocr:
+            self._ocr[model_dir] = EasyOcrEngine(
+                gpu=self._rec.device == "cuda", model_dir=model_dir
             )
-        return self._ocr[settings.model_dir]
+        return self._ocr[model_dir]
+
+    def _model_dir(self, settings: AppSettings) -> str | None:
+        """사용자가 지정한 경로가 우선이고, 없으면 배포본에 동봉된 모델 폴더를 쓴다."""
+        return settings.model_dir or self._bundled_dir
 
 
 def build_services(
@@ -116,9 +128,6 @@ def build_services(
             ocr=engines.ocr(settings),
             config=apply_settings(base_config, settings),
             data_dir=data_dir,
-            audio_dir=os.environ.get("BARRIERFREE_AUDIO_DIR") or None,
-            image_dir=os.environ.get("BARRIERFREE_IMAGE_DIR") or None,
-            ocr_dir=os.environ.get("BARRIERFREE_OCR_DIR") or None,
             confirm_region=confirm,
             on_progress=progress,
         )
@@ -151,6 +160,8 @@ def build_services(
 def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName(APP_NAME)
+    app.setStyle("Fusion")  # 시안 스타일시트가 플랫폼 기본 모양에 가려지지 않게 한다
+    app.setStyleSheet(theme.stylesheet())
     dialogs = QtDialogs()
     if not ensure_ffmpeg(dialogs):
         return 1

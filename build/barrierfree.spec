@@ -3,24 +3,24 @@
 #   pyinstaller build/barrierfree.spec --noconfirm
 # 자세한 절차와 점검 목록은 build/README.md를 본다. (Mac에서는 검증하지 못했다.)
 import os
-
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # 저장소 루트
 
 block_cipher = None
 
-# spec 안의 상대 경로는 이 파일(build/) 기준이므로 저장소 루트를 명시한다.
-ROOT = os.path.dirname(SPECPATH)
-
 datas = []
 datas += collect_data_files("easyocr")           # 문자 사전 등
-datas += collect_data_files("whisper")            # mel 필터, 토크나이저 어휘 파일(assets)
-datas += [  # 저장소 루트의 ffmpeg 폴더에 사전에 내려받아 둔다
-    (os.path.join(ROOT, "ffmpeg", "ffmpeg.exe"), "ffmpeg"),
-    (os.path.join(ROOT, "ffmpeg", "ffprobe.exe"), "ffmpeg"),
-]
+datas += collect_data_files("faster_whisper")     # VAD(silero) 모델 파일
+datas += [(os.path.join(ROOT, "ffmpeg", "ffmpeg.exe"), "ffmpeg"), (os.path.join(ROOT, "ffmpeg", "ffprobe.exe"), "ffmpeg")]  # 사전에 내려받아 둔다
 
-hiddenimports = collect_submodules("easyocr") + collect_submodules("whisper")
-hiddenimports += ["tiktoken_ext", "tiktoken_ext.openai_public"]  # whisper 토크나이저가 동적으로 찾는다
+# 모델은 build/fetch_models.py로 미리 내려받아 models/에 둔다. 없으면 빌드를 멈춘다(모델 없는 배포 방지).
+_models = os.path.join(ROOT, "models")
+if not os.path.isdir(_models) or not os.listdir(_models):
+    raise SystemExit("models/ 폴더가 비어 있습니다. 먼저 `python build/fetch_models.py`를 실행하세요.")
+datas += [(_models, "models")]
+
+hiddenimports = collect_submodules("easyocr") + collect_submodules("faster_whisper")
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],

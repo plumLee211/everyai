@@ -20,6 +20,7 @@ from typing import Protocol
 from PyQt6.QtCore import QEvent, QTimer
 from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -44,6 +45,7 @@ from barrierfree.pipeline import (
 from barrierfree.review_state import ReviewState
 from barrierfree.settings import AppSettings, effective_model, load_settings, save_settings
 from barrierfree.storage.repository import Repository
+from barrierfree.ui import theme
 from barrierfree.ui.dialogs import Dialogs
 from barrierfree.ui.progress_page import ProgressPage
 from barrierfree.ui.register_page import RegisterPage
@@ -52,6 +54,14 @@ from barrierfree.ui.review_timer import ActiveTimeTracker
 from barrierfree.ui.worker import AnalysisWorker
 
 WINDOW_TITLE = "배리어프리 영상 AI 점검 도구"
+BRAND = "영상의 틈"
+NEW_WORK_TITLE = "새 영상 점검"
+RECENT_LIMIT = 5
+HELP_TEXT = (
+    "1. 영상(과 자막 파일)을 선택합니다.\n"
+    "2. 분석을 시작하면 음성·자막·화면 글자를 비교합니다.\n"
+    "3. 검수 화면에서 탐지된 항목을 확인해 확정하거나 기각하고, 결과를 CSV로 내보냅니다."
+)
 FLUSH_INTERVAL_MS = 30_000  # 검수 시간을 이 주기로 저장해, 비정상 종료에도 대부분 남게 한다
 PLAYBACK_TICK_MS = 1_000  # 영상을 보고 있는 시간도 검수 활동으로 세기 위한 확인 주기
 CLOSE_WAIT_MS = 10_000  # 종료 시 분석 스레드가 멈추기를 기다리는 최대 시간
@@ -107,10 +117,18 @@ class MainWindow(QMainWindow):
         self.close_wait_ms = CLOSE_WAIT_MS
         self.setWindowTitle(WINDOW_TITLE)
 
-        self.product_label = QLabel(WINDOW_TITLE)
-        self.work_label = QLabel("")
-        self.stage_label = QLabel("")
-        self.header_settings_button = QPushButton("설정")
+        self.product_label = QLabel(BRAND)
+        self.product_label.setObjectName("Brand")
+        self.work_label = QLabel(NEW_WORK_TITLE)
+        self.work_label.setObjectName("WorkTitle")
+        self.stage_label = QLabel("")  # 경로 표시줄: "작업 / 영상 점검 / 등록"
+        self.stage_label.setObjectName("Breadcrumb")
+        self.help_button = QPushButton("도움말")
+        self.header_settings_button = QPushButton("설정")  # 사이드바 '설정' 메뉴
+        self.new_work_button = QPushButton(NEW_WORK_TITLE)  # 사이드바 '최근 작업' 맨 위
+        self.recent_box = QVBoxLayout()
+        self.recent_box.setSpacing(2)
+        self.nav_button = QPushButton("▣  영상 점검")
 
         self.register_page = RegisterPage(
             services.dialogs, services.video_validator, services.subtitle_loader
@@ -121,17 +139,28 @@ class MainWindow(QMainWindow):
         for page in (self.register_page, self.progress_page, self.review_page):
             self.stack.addWidget(page)
 
-        header = QHBoxLayout()
-        for widget in (self.product_label, self.work_label, self.stage_label):
-            header.addWidget(widget)
-        header.addStretch(1)
-        header.addWidget(self.header_settings_button)
         root = QWidget()
         layout = QVBoxLayout(root)
-        layout.addLayout(header)
-        layout.addWidget(self.stack, 1)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._build_header())
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        body.addWidget(self._build_sidebar())
+        content = QVBoxLayout()
+        content.setContentsMargins(28, 16, 28, 0)
+        content.addWidget(self.stage_label)
+        content.addWidget(self.stack, 1)
+        body.addLayout(content, 1)
+        layout.addLayout(body, 1)
         self.setCentralWidget(root)
+        self.resize(1280, 800)
+        self.setMinimumSize(1000, 680)
 
+        self.help_button.clicked.connect(self._show_help)
+        self.new_work_button.clicked.connect(self._new_work_clicked)
+        self.nav_button.clicked.connect(self._new_work_clicked)
         self.header_settings_button.clicked.connect(self._open_settings)
         self.register_page.settings_requested.connect(self._open_settings)
         self.register_page.start_requested.connect(self._start)
@@ -143,6 +172,104 @@ class MainWindow(QMainWindow):
 
         self._show_register()
         self._refresh_settings_summary()
+        self._refresh_recent()
+
+    # ----- 틀(헤더·사이드바) -----
+
+    def _build_header(self) -> QWidget:
+        header = QFrame()
+        header.setObjectName("AppHeader")
+        header.setFixedHeight(64)
+        row = QHBoxLayout(header)
+        row.setContentsMargins(24, 0, 24, 0)
+        row.setSpacing(14)
+        row.addWidget(self.product_label)
+        row.addWidget(self.work_label)
+        row.addStretch(1)
+        row.addWidget(self.help_button)
+        return header
+
+    def _build_sidebar(self) -> QWidget:
+        side = QFrame()
+        side.setObjectName("Sidebar")
+        side.setFixedWidth(216)
+        col = QVBoxLayout(side)
+        col.setContentsMargins(16, 16, 16, 16)
+        col.setSpacing(4)
+
+        def section(text: str) -> QLabel:
+            label = QLabel(text)
+            label.setObjectName("SidebarSection")
+            return label
+
+        col.addWidget(section("작업"))
+        self.nav_button.setProperty("selected", True)
+        col.addWidget(self.nav_button)
+        col.addWidget(self.header_settings_button)
+        divider = QFrame()
+        divider.setObjectName("SidebarDivider")
+        divider.setFixedHeight(1)
+        col.addSpacing(8)
+        col.addWidget(divider)
+        col.addSpacing(8)
+        col.addWidget(section("최근 작업"))
+        self.new_work_button.setProperty("recent", True)
+        col.addWidget(self.new_work_button)
+        col.addLayout(self.recent_box)
+        col.addStretch(1)
+        return side
+
+    def _refresh_recent(self) -> None:
+        """사이드바 '최근 작업'을 실제 분석 기록(완료된 세션)으로 채운다."""
+        while self.recent_box.count():
+            item = self.recent_box.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+        try:
+            sessions = self._services.repo.recent_sessions(RECENT_LIMIT)
+        except sqlite3.Error:
+            return  # 기록을 못 읽어도 화면 사용에는 지장이 없다
+        for record in sessions:
+            button = QPushButton(record.video_name)
+            button.setProperty("recent", True)
+            button.setToolTip(record.video_path)
+            button.setEnabled(self._worker is None)  # 분석 시작 직후(스레드 시작 전)에도 막는다
+            button.clicked.connect(lambda _checked=False, sid=record.id: self._open_past(sid))
+            self.recent_box.addWidget(button)
+        theme.repolish(self)
+
+    def _show_help(self) -> None:
+        self._services.dialogs.info("도움말", HELP_TEXT)
+
+    def _new_work_clicked(self) -> None:
+        if self.is_analyzing:
+            return
+        if self.stack.currentWidget() is self.review_page:
+            self._new_analysis()
+        else:
+            self._show_register()
+
+    def _open_past(self, session_id: str) -> None:
+        """사이드바에서 지난 분석을 열어 검수 화면으로 보낸다."""
+        if self.is_analyzing:
+            return
+        try:
+            state = ReviewState(self._services.repo, session_id)
+            record = state.session
+        except (KeyError, sqlite3.Error):
+            self._services.dialogs.warn("기록 열기 실패", "지난 분석 기록을 열 수 없습니다.")
+            return
+        self._end_review_timing()  # 보던 검수의 시간을 그 세션에 먼저 저장한다(상태를 바꾸기 전에)
+        self._review_state = state
+        video = Path(record.video_path)
+        self._last_inputs = (video, None)
+        self.review_page.load(state, video)
+        self.stack.setCurrentWidget(self.review_page)
+        self._begin_review_timing(state)
+        self._set_stage(STAGE_REVIEW, record.video_name)
 
     # ----- 화면 전환 -----
 
@@ -151,8 +278,9 @@ class MainWindow(QMainWindow):
         return self._worker is not None and self._worker.isRunning()
 
     def _set_stage(self, stage: str, work: str = "") -> None:
-        self.stage_label.setText(f"현재 단계: {stage}")
-        self.work_label.setText(f"작업: {work}" if work else "")
+        self.stage_label.setText(f"작업  /  영상 점검  /  {stage}")
+        self.stage_label.setHidden(stage == STAGE_REVIEW)  # 검수 화면은 자체 경로 표시줄을 쓴다
+        self.work_label.setText(work or NEW_WORK_TITLE)
 
     def _show_register(self) -> None:
         self.review_page.pause_playback()  # 등록 화면에서 영상 소리가 계속 나면 안 된다
@@ -170,7 +298,9 @@ class MainWindow(QMainWindow):
         s = self._services
         model = effective_model(self._settings, s.recommendation.model)
         device = "GPU" if s.recommendation.device == "cuda" else "CPU"
-        self.register_page.set_settings_summary(f"모델: {model} · 실행 장치: {device}")
+        self.register_page.set_settings_summary(
+            device=f"자동 감지 · {device}", model=model
+        )
 
     # ----- 설정 -----
 
@@ -221,6 +351,7 @@ class MainWindow(QMainWindow):
 
         self.register_page.set_busy(True)
         self.header_settings_button.setEnabled(False)
+        self._refresh_recent()  # 분석 중에는 최근 작업 열기를 막는다
         self.progress_page.start(video.name)
         self.stack.setCurrentWidget(self.progress_page)
         self._set_stage(STAGE_ANALYZE, video.name)
@@ -243,6 +374,7 @@ class MainWindow(QMainWindow):
         if worker is not None:
             worker.wait(5000)
             worker.deleteLater()
+        self._refresh_recent()
 
     def _on_succeeded(self, result: PipelineResult) -> None:
         self._finish_worker()

@@ -153,6 +153,15 @@ class Repository:
             )
         return session_id
 
+    def recent_sessions(self, limit: int = 5) -> list[SessionRecord]:
+        """분석이 끝난 최근 세션(최신순). 사이드바의 '최근 작업'에 쓴다."""
+        rows = self.connection().execute(
+            "SELECT id FROM analysis_session WHERE status = ?"
+            " ORDER BY COALESCE(finished_at, created_at) DESC, rowid DESC LIMIT ?",
+            (SessionStatus.COMPLETED.value, limit),
+        ).fetchall()
+        return [self.get_session(row["id"]) for row in rows]
+
     def get_session(self, session_id: str) -> SessionRecord:
         row = self.connection().execute(
             "SELECT * FROM analysis_session WHERE id = ?", (session_id,)

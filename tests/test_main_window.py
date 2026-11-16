@@ -37,6 +37,7 @@ from barrierfree.pipeline import (
 from barrierfree.settings import AppSettings, load_settings
 from barrierfree.storage.repository import Repository
 from barrierfree.ui.main_window import AppServices, MainWindow
+from barrierfree.ui.register_page import RegisterPage
 from tests.fakes import FakeDialogs, FakePlayer
 
 DEVICE = DeviceInfo("Intel i5", 8, 16.0, False)
@@ -158,6 +159,10 @@ def repo(tmp_path: Path) -> Iterator[Repository]:
     r.close_all()
 
 
+def summary_text(page: RegisterPage) -> str:
+    return page.device_value_label.text() + " " + page.model_value_label.text()
+
+
 def make_env(qtbot: QtBot, repo: Repository, tmp_path: Path, **plan: Any) -> Env:
     return Env(qtbot, repo, tmp_path, **plan)
 
@@ -172,8 +177,8 @@ def test_starts_on_the_register_page_with_a_settings_summary(
     w = env.window
     assert w.stack.currentWidget() is w.register_page
     assert "등록" in w.stage_label.text()
-    assert "small" in w.register_page.settings_summary_label.text()
-    assert "CPU" in w.register_page.settings_summary_label.text()
+    assert "small" in summary_text(w.register_page)
+    assert "CPU" in summary_text(w.register_page)
     assert w.header_settings_button.isEnabled()
 
 
@@ -302,7 +307,7 @@ def test_applying_settings_saves_them_and_updates_the_summary(
     env.settings_edit = AppSettings("medium", None, 0.3)
     env.window.header_settings_button.click()
     assert load_settings(env.settings_path) == AppSettings("medium", None, 0.3)
-    assert "medium" in env.window.register_page.settings_summary_label.text()
+    assert "medium" in summary_text(env.window.register_page)
 
 
 def test_cancelling_the_settings_dialog_changes_nothing(
@@ -622,8 +627,8 @@ def test_failed_settings_save_keeps_the_old_settings_and_tells_the_user(
     env.settings_edit = AppSettings("medium", None, 0.3)
     env.window.header_settings_button.click()
     assert env.dialogs.warnings and "저장" in env.dialogs.warnings[0][1]
-    assert "small" in env.window.register_page.settings_summary_label.text()
-    assert "medium" not in env.window.register_page.settings_summary_label.text()
+    assert "small" in summary_text(env.window.register_page)
+    assert "medium" not in summary_text(env.window.register_page)
 
 
 def test_settings_apply_to_memory_only_after_the_save_succeeds(
@@ -697,3 +702,63 @@ def test_closing_when_idle_needs_no_confirmation(
     event = QCloseEvent()
     env.window.closeEvent(event)
     assert event.isAccepted() and env.dialogs.confirms == []
+
+
+# ---------- 사이드바·도움말 (Figma 시안) ----------
+
+
+def recent_buttons(env: Env) -> list[str]:
+    box = env.window.recent_box
+    return [box.itemAt(i).widget().text() for i in range(box.count())]
+
+
+def test_recent_works_lists_finished_analyses_and_opens_one_in_review(
+    qtbot: QtBot, repo: Repository, tmp_path: Path
+) -> None:
+    env = make_env(qtbot, repo, tmp_path)
+    assert recent_buttons(env) == []
+    env.start_analysis("안내 영상.mp4")
+    env.wait_for("review_page")
+    env.window.review_page.new_analysis_button.click()  # 등록 화면으로
+    assert env.window.stack.currentWidget() is env.window.register_page
+    assert recent_buttons(env) == ["안내 영상.mp4"]
+
+    env.window.recent_box.itemAt(0).widget().click()
+    assert env.window.stack.currentWidget() is env.window.review_page
+    assert env.window.review_page.table_view.model().rowCount() == 2
+    assert "안내 영상.mp4" in env.window.work_label.text()
+
+
+def test_recent_works_cannot_be_opened_while_analyzing(
+    qtbot: QtBot, repo: Repository, tmp_path: Path
+) -> None:
+    env = make_env(qtbot, repo, tmp_path)
+    env.start_analysis("안내 영상.mp4")
+    env.wait_for("review_page")
+    env.window.review_page.new_analysis_button.click()
+    env.plan["block"] = True
+    env.start_analysis("두번째.mp4")
+    assert not env.window.recent_box.itemAt(0).widget().isEnabled()
+    env.window.progress_page.cancel_button.click()
+    env.wait_for("register_page")
+    assert env.window.recent_box.itemAt(0).widget().isEnabled()
+
+
+def test_sidebar_new_work_returns_to_register_and_help_explains_the_flow(
+    qtbot: QtBot, repo: Repository, tmp_path: Path
+) -> None:
+    env = make_env(qtbot, repo, tmp_path)
+    env.start_analysis()
+    env.wait_for("review_page")
+    env.window.new_work_button.click()  # 검수 중에는 새 분석 확인 절차를 따른다
+    assert env.window.stack.currentWidget() is env.window.register_page
+    env.window.help_button.click()
+    assert env.dialogs.infos and env.dialogs.infos[-1][0] == "도움말"
+
+
+def test_brand_and_default_work_title_follow_the_design(
+    qtbot: QtBot, repo: Repository, tmp_path: Path
+) -> None:
+    env = make_env(qtbot, repo, tmp_path)
+    assert env.window.product_label.text() == "영상의 틈"
+    assert env.window.work_label.text() == "새 영상 점검"

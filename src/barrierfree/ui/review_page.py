@@ -18,7 +18,9 @@ from PyQt6.QtCore import QItemSelection, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
     QSplitter,
@@ -44,9 +46,15 @@ from barrierfree.review_state import (
     ReviewState,
     SaveError,
 )
+from barrierfree.ui import theme
 from barrierfree.ui.dialogs import Dialogs
 from barrierfree.ui.issue_model import ISSUE_ID_ROLE, IssueTableModel, format_time
 
+_STATUS_TONES = {
+    ReviewStatus.UNREVIEWED: "warn",
+    ReviewStatus.CONFIRMED: "success",
+    ReviewStatus.DISMISSED: "danger",
+}
 NO_SELECTION = "문제를 선택하면 상세 내용이 표시됩니다."
 NO_MATCH = "조건에 해당하는 항목이 없습니다."
 _UNCERTAIN_BELOW = 0.5  # 이 값 미만이면 'AI 인식이 불확실'을 함께 알린다(D-07 미확정, 임시값)
@@ -123,6 +131,10 @@ class ReviewPage(QWidget):
         self.table_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table_view.setShowGrid(False)
+        self.table_view.verticalHeader().setVisible(False)
+        self.table_view.horizontalHeader().setVisible(False)
+        self.table_view.horizontalHeader().setStretchLastSection(False)
         self.empty_label = QLabel("")
 
         # 하단 상세 (DET-01~10)
@@ -144,6 +156,22 @@ class ReviewPage(QWidget):
                       self.confidence_label, self.notices_label):
             label.setWordWrap(True)
 
+        self.video_name_label.setStyleSheet("font-weight: 600;")
+        self.total_label.setStyleSheet("font-weight: 700; font-size: 14px;")
+        for label, tone in ((self.unreviewed_label, "warn"), (self.confirmed_label, "success"),
+                            (self.dismissed_label, "danger")):
+            label.setProperty("chip", True)
+            label.setProperty("tone", tone)
+        theme.role(self.verdict_summary_label, "caption")
+        self.status_label.setProperty("chip", True)
+        self.status_label.setProperty("tone", "neutral")
+        theme.role(self.detail_hint_label, "caption")
+        theme.role(self.confidence_label, "caption")
+        theme.role(self.span_label, "section")
+        theme.role(self.reason_label, "muted")
+        for title in (self.speech_title_label, self.compare_title_label):
+            theme.role(title, "caption")
+        theme.primary(self.confirm_button)
         self._build_layout()
         self.new_analysis_button.clicked.connect(self.new_analysis_requested.emit)
         self.export_button.clicked.connect(self._export)
@@ -158,47 +186,82 @@ class ReviewPage(QWidget):
 
     def _build_layout(self) -> None:
         top = QHBoxLayout()
-        for widget in (self.video_name_label, self.total_label, self.unreviewed_label,
-                       self.confirmed_label, self.dismissed_label):
+        top.setSpacing(10)
+        top.addWidget(self.video_name_label)
+        top.addSpacing(12)
+        for widget in (self.unreviewed_label, self.confirmed_label, self.dismissed_label):
             top.addWidget(widget)
         top.addStretch(1)
         top.addWidget(self.new_analysis_button)
         top.addWidget(self.export_button)
 
+        list_card = theme.card((16, 16, 16, 16), 10)
+        list_layout = list_card.layout()
+        assert isinstance(list_layout, QVBoxLayout)
+        list_layout.addWidget(self.total_label)
         filters = QHBoxLayout()
         for combo in (self.group_filter, self.status_filter, self.verdict_filter):
             filters.addWidget(combo)
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.addLayout(filters)
-        right_layout.addWidget(self.table_view, 1)
-        right_layout.addWidget(self.empty_label)
+        filters.addStretch(1)
+        list_layout.addLayout(filters)
+        list_layout.addWidget(self.table_view, 1)
+        list_layout.addWidget(self.empty_label)
+        list_layout.addWidget(self.verdict_summary_label)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addWidget(self.player, 1)
         left_layout.addWidget(self.player_error_label)
 
         splitter = QSplitter()
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(12)
         splitter.addWidget(left)
-        splitter.addWidget(right)
+        splitter.addWidget(list_card)
         splitter.setSizes([60, 40])  # 좌 약 60%, 우 약 40%
 
-        detail = QWidget()
-        detail_layout = QVBoxLayout(detail)
-        for widget in (self.detail_hint_label, self.kind_label, self.span_label,
-                       self.reason_label, self.speech_title_label, self.speech_label,
-                       self.compare_title_label, self.compare_label, self.verdict_label,
-                       self.confidence_label, self.status_label):
-            detail_layout.addWidget(widget)
-        buttons = QHBoxLayout()
-        for button in (self.dismiss_button, self.confirm_button, self.reset_button):
-            buttons.addWidget(button)
-        detail_layout.addLayout(buttons)
+        detail = theme.card((16, 14, 16, 14), 10)
+        detail_layout = detail.layout()
+        assert isinstance(detail_layout, QVBoxLayout)
+        head = QHBoxLayout()
+        head.setSpacing(10)
+        head.addWidget(self.span_label)
+        head.addWidget(self.kind_label)
+        head.addStretch(1)
+        head.addWidget(self.status_label)
+        detail_layout.addLayout(head)
+        detail_layout.addWidget(self.reason_label)
+        compare = QHBoxLayout()
+        compare.setSpacing(12)
+        for kind, title, body in (
+            ("speech", self.speech_title_label, self.speech_label),
+            ("subtitle", self.compare_title_label, self.compare_label),
+        ):
+            box = QFrame()
+            box.setProperty("compare", kind)
+            box_layout = QVBoxLayout(box)
+            box_layout.setContentsMargins(12, 10, 12, 10)
+            box_layout.addWidget(title)
+            box_layout.addWidget(body)
+            box_layout.addStretch(1)
+            compare.addWidget(box, 1)
+        detail_layout.addLayout(compare)
+        meta = QHBoxLayout()
+        meta.addWidget(self.verdict_label)
+        meta.addWidget(self.confidence_label, 1)
+        detail_layout.addLayout(meta)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        actions.addWidget(self.detail_hint_label, 1)
+        for button in (self.reset_button, self.dismiss_button, self.confirm_button):
+            actions.addWidget(button)
+        detail_layout.addLayout(actions)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 16)
+        layout.setSpacing(12)
         layout.addLayout(top)
-        layout.addWidget(self.verdict_summary_label)
         layout.addWidget(self.notices_label)
         layout.addWidget(splitter, 1)
         layout.addWidget(detail)
@@ -228,10 +291,17 @@ class ReviewPage(QWidget):
         self.table_view.setModel(self._model)
         self.table_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
         self.table_view.resizeColumnsToContents()
+        self.table_view.setColumnHidden(1, True)  # 유형·AI 판정은 상세 패널에서 본다
+        self.table_view.setColumnHidden(3, True)
+        self.table_view.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
         self._loading = False
 
-        self.video_name_label.setText(f"영상: {state.session.video_name}")
-        self.notices_label.setText("\n".join(state.notices()))
+        self.video_name_label.setText(f"검수  /  {state.session.video_name}")
+        notices = "\n".join(state.notices())
+        self.notices_label.setText(notices)
+        self.notices_label.setVisible(bool(notices))
         self.player_error_label.setText("")
         if video_path is not None and video_path.exists():
             self.player.load(video_path)
@@ -302,6 +372,7 @@ class ReviewPage(QWidget):
         self.verdict_label.setText(f"AI 판정: {VERDICT_LABELS[issue.verdict]}")
         self.confidence_label.setText(confidence_text(issue))
         self.status_label.setText(f"검수 상태: {REVIEW_STATUS_LABELS[issue.review_status]}")
+        theme.set_tone(self.status_label, _STATUS_TONES[issue.review_status])
 
     # ----- 검수 -----
 
@@ -328,7 +399,7 @@ class ReviewPage(QWidget):
         if self._state is None:
             return
         s = self._state.summary()
-        self.total_label.setText(f"총 탐지 {s.total}")
+        self.total_label.setText(f"탐지 문제  ·  {s.total}건")
         self.unreviewed_label.setText(f"미검토 {s.unreviewed}")
         self.confirmed_label.setText(f"확정 {s.confirmed}")
         self.dismissed_label.setText(f"기각 {s.dismissed}")

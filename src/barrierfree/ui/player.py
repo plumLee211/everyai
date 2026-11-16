@@ -98,6 +98,8 @@ class VideoPlayerPanel(QWidget):
     ) -> None:
         super().__init__(parent)
         self._backend: MediaBackend = (backend_factory or QtMediaBackend)()
+        self.setObjectName("PlayerPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.video_widget = self._backend.video_widget()
 
         self.play_button = QPushButton("재생")
@@ -110,6 +112,7 @@ class VideoPlayerPanel(QWidget):
             controls.addWidget(widget)
         controls.setStretch(2, 1)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 12)
         layout.addWidget(self.video_widget, 1)
         layout.addLayout(controls)
 

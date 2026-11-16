@@ -9,8 +9,11 @@
 2. `.venv\Scripts\pip install -r requirements.txt pyinstaller`
    - GPU를 쓰려면 CUDA용 torch를 따로 설치한다(requirements.txt는 일반 빌드 기준).
 3. 저장소 루트에 `ffmpeg\ffmpeg.exe`, `ffmpeg\ffprobe.exe`를 둔다(LGPL 빌드 권장, 라이선스 고지 포함).
-4. 모델은 동봉하지 않는다. 첫 실행에서 내려받거나, 설정 화면의 모델 경로를 쓴다.
-   인터넷이 없는 기관 PC라면 모델 폴더를 별도로 전달한다.
+4. 모델을 미리 내려받는다: `.venv\Scripts\python build\fetch_models.py` (저장소 루트의 `models/`, 약 2.1GB).
+   음성 인식 base·small·medium(앱이 권장할 수 있는 모델 전부)과 EasyOCR 한국어·영어 모델이다.
+   `models/`가 비어 있으면 빌드가 멈춘다. 배포본에는 모델이 들어 있어 첫 실행에 인터넷이 필요 없다.
+   설정 화면에서 모델 경로를 지정하면 그 경로가 우선한다.
+5. CUDA 라이브러리(cuBLAS·cuDNN)는 동봉하지 않는다. GPU를 쓸 수 없으면 앱이 자동으로 CPU로 폴백한다.
 
 ## 빌드
 
@@ -18,8 +21,7 @@
 .venv\Scripts\pyinstaller build\barrierfree.spec --noconfirm
 ```
 
-결과: `dist\barrierfree\` 폴더(onedir). 폴더째 배포한다. 앱은 `barrierfree.exe` 옆의 `ffmpeg\`
-폴더를 먼저 찾고(`media/ffmpeg.py`의 `find_binary`), 없으면 PATH를 본다.
+결과: `dist\barrierfree\` 폴더(onedir). 폴더째 배포한다(약 3.3GB). 앱은 `_internal\ffmpeg\`(`paths.py`)를 먼저 찾고(`media/ffmpeg.py`의 `find_binary`), 없으면 PATH를 본다.
 
 ## 확인 목록 (배포 전)
 
