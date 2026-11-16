@@ -30,6 +30,7 @@ from barrierfree.analysis.subtitle_extract import extract_cues, split_by_region
 from barrierfree.analysis.subtitle_region import Rect, RegionEstimate, estimate_subtitle_region
 from barrierfree.cancel import CancelledError, CancelToken
 from barrierfree.config import AnalysisConfig
+from barrierfree.dev_artifacts import DevArtifacts
 from barrierfree.engines.ocr import (
     Frame,
     OcrBox,
@@ -222,6 +223,7 @@ class AnalysisPipeline:
         confirm_region: ConfirmRegion | None = None,
         on_progress: Progress | None = None,
         frame_source: FrameSource | None = None,
+        dev_artifacts: DevArtifacts | None = None,
     ) -> None:
         self._repo = repo
         self._cache = cache
@@ -229,6 +231,8 @@ class AnalysisPipeline:
         self._ocr = ocr
         self._config = config
         self._data_dir = Path(data_dir)
+        # 개발용 산출물(MP3·캡처·SRT) 저장. None이면 아무것도 하지 않는다.
+        self._dev = dev_artifacts
         self._confirm = confirm_region
         self._progress = on_progress
         self._frames = frame_source or _default_frame_source
@@ -372,6 +376,11 @@ class AnalysisPipeline:
         speech: list[SpeechSegment] = []
         stt_hit = False
         if audio is not None:
+            dev_mp3 = (
+                self._dev.save_audio(path, session_id, cancel, notices)
+                if self._dev is not None
+                else None
+            )
             self._prepare_model(self._stt, "음성 인식 모델을 준비하는 중입니다.")
             self._stage = Stage.STT
             key = make_key(
@@ -384,6 +393,8 @@ class AnalysisPipeline:
                 segments_to_payload,
                 segments_from_payload,
             )
+            if self._dev is not None:
+                self._dev.save_speech_srt(dev_mp3, speech, notices)
         else:
             notices.append("영상에 오디오 트랙이 없어 음성 인식을 건너뛰었습니다.")
         self._measure(session_id, Stage.STT, started, cache_hit=stt_hit, count=len(speech),
@@ -423,6 +434,8 @@ class AnalysisPipeline:
         self._measure(session_id, Stage.OCR, started, cache_hit=all(hits),
                       count=len(full_obs), unit="FRAME")
         self._emit(Stage.OCR, "DONE", 1.0, "화면 글자 인식을 마쳤습니다.")
+        if self._dev is not None:
+            self._dev.save_screen(path, session_id, full.texts, cancel, notices)
         cancel.raise_if_cancelled()
 
         # 4. 자막 비교 (M1)

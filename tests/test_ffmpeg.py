@@ -319,3 +319,63 @@ def test_iter_frames_can_be_closed_early(make_video: MakeVideo) -> None:
     gen = ff.iter_frames(make_video(seconds=2.0), fps=10.0, max_width=320)
     next(gen)
     gen.close()  # 취소 시 ffmpeg 프로세스가 정리되어야 한다(예외 없이 종료)
+
+
+# ---------- 개발용 산출물: MP3·JPG 저장 ----------
+
+
+def test_save_audio_mp3_writes_a_playable_file(make_video: MakeVideo, tmp_path: Path) -> None:
+    out = ff.save_audio_mp3(make_video(seconds=2.0), tmp_path / "새 폴더" / "음성.mp3")
+    assert out.is_file() and out.stat().st_size > 0
+    assert out.read_bytes()[:3] in (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")  # MP3 머리
+
+
+def test_save_audio_mp3_rejects_a_video_without_audio(
+    make_video: MakeVideo, tmp_path: Path
+) -> None:
+    with pytest.raises(ff.NoAudioStreamError):
+        ff.save_audio_mp3(make_video(audio=False), tmp_path / "a.mp3")
+    assert not (tmp_path / "a.mp3").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="shebang 기반 가짜 실행 파일")
+def test_save_audio_mp3_cancel_leaves_no_half_written_file(
+    make_video: MakeVideo, hanging_ffmpeg: None, tmp_path: Path
+) -> None:
+    video = make_video()
+    token = CancelToken()
+    timer = _cancel_soon(token)
+    with pytest.raises(CancelledError):
+        ff.save_audio_mp3(video, tmp_path / "a.mp3", cancel=token)
+    timer.join()
+    assert not (tmp_path / "a.mp3").exists()
+
+
+def test_save_frames_jpg_captures_one_image_per_second(
+    make_video: MakeVideo, tmp_path: Path
+) -> None:
+    frames = ff.save_frames_jpg(make_video(seconds=3.0), tmp_path / "캡처")
+    assert 2 <= len(frames) <= 4
+    assert all(f.suffix == ".jpg" and f.stat().st_size > 0 for f in frames)
+    assert frames == sorted(frames)
+
+
+def test_save_frames_jpg_rejects_a_non_positive_interval(
+    make_video: MakeVideo, tmp_path: Path
+) -> None:
+    with pytest.raises(ValueError):
+        ff.save_frames_jpg(make_video(), tmp_path / "x", interval_s=0)
+    assert not (tmp_path / "x").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="shebang 기반 가짜 실행 파일")
+def test_save_frames_jpg_cancel_removes_the_folder(
+    make_video: MakeVideo, hanging_ffmpeg: None, tmp_path: Path
+) -> None:
+    video = make_video()
+    token = CancelToken()
+    timer = _cancel_soon(token)
+    with pytest.raises(CancelledError):
+        ff.save_frames_jpg(video, tmp_path / "캡처", cancel=token)
+    timer.join()
+    assert not (tmp_path / "캡처").exists()

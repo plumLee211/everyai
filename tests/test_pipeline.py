@@ -18,6 +18,7 @@ import pytest
 from barrierfree.analysis.subtitle_region import RegionEstimate, region_rect
 from barrierfree.cancel import CancelledError, CancelToken
 from barrierfree.config import AnalysisConfig
+from barrierfree.dev_artifacts import DevArtifacts
 from barrierfree.engines.ocr import OcrBox
 from barrierfree.engines.stt import SttError
 from barrierfree.media.ffmpeg import VideoFileNotFoundError, VideoTooLongError
@@ -154,6 +155,7 @@ def build(
     confirm: Callable[[RegionEstimate], RegionDecision] | None = None,
     events: list[StageEvent] | None = None,
     config: AnalysisConfig | None = None,
+    dev: DevArtifacts | None = None,
 ) -> AnalysisPipeline:
     return AnalysisPipeline(
         repo=env.repo,
@@ -165,6 +167,7 @@ def build(
         confirm_region=confirm,
         on_progress=events.append if events is not None else None,
         frame_source=scenes,
+        dev_artifacts=dev,
     )
 
 
@@ -539,3 +542,65 @@ def test_progress_events_cover_every_stage_in_order(env: Any, make_video: MakeVi
     assert events[-1].stage is Stage.RESULT_SAVE and events[-1].state == "DONE"
     ocr_fractions = [e.fraction for e in events if e.stage is Stage.OCR and e.fraction is not None]
     assert ocr_fractions == sorted(ocr_fractions) and ocr_fractions
+
+
+# ---------- 개발용 산출물(환경변수로 켤 때만) ----------
+
+
+def _screen_with_text() -> tuple[Scenes, FakeOcr]:
+    box = OcrBox("상도3동 15명", 0.95, (0.1, 0.1, 0.4, 0.1))
+    return Scenes(full=lambda t: 40), FakeOcr(full={40: [box]})
+
+
+def test_dev_artifacts_are_saved_when_enabled(env: Any, make_video: MakeVideo) -> None:
+    scenes, ocr = _screen_with_text()
+    dev = DevArtifacts(
+        audio_dir=env.tmp / "audio", image_dir=env.tmp / "image", ocr_dir=env.tmp / "ocr"
+    )
+    result = build(env, FakeStt(SPEECH), ocr, scenes, dev=dev).run(
+        make_video("영상.mp4", seconds=10), srt_for(env, SHOWN)
+    )
+
+    stem = f"영상_{result.session_id}"
+    assert (env.tmp / "audio" / f"{stem}.mp3").is_file()
+    assert SENTENCES[0] in (env.tmp / "audio" / f"{stem}.srt").read_text(encoding="utf-8")
+    assert len(list((env.tmp / "image" / stem).glob("frame_*.jpg"))) >= 9
+    assert "상도3동 15명" in (env.tmp / "ocr" / f"{stem}.srt").read_text(encoding="utf-8")
+    assert result.notices == []
+
+
+def test_dev_artifacts_do_not_change_the_analysis_result(
+    env: Any, make_video: MakeVideo
+) -> None:
+    video, srt = make_video(seconds=10), srt_for(env, SHOWN)
+    plain = build(env, FakeStt(SPEECH), FakeOcr(), Scenes()).run(video, srt)
+    dev = DevArtifacts(audio_dir=env.tmp / "audio", image_dir=env.tmp / "image")
+    with_dev = build(env, FakeStt(SPEECH), FakeOcr(), Scenes(), dev=dev).run(video, srt)
+
+    key = lambda i: (i.kind, i.start_s, i.end_s, i.verdict)  # noqa: E731
+    assert [key(i) for i in issues_of(env, with_dev.session_id)] == [
+        key(i) for i in issues_of(env, plain.session_id)
+    ]
+    assert with_dev.issue_count == plain.issue_count
+
+
+def test_nothing_is_saved_when_dev_artifacts_are_off(env: Any, make_video: MakeVideo) -> None:
+    before = {p for p in env.tmp.rglob("*") if p.suffix in {".mp3", ".jpg"}}
+    build(env, FakeStt(SPEECH), FakeOcr(), Scenes()).run(
+        make_video(seconds=10), srt_for(env, SHOWN)
+    )
+    assert {p for p in env.tmp.rglob("*") if p.suffix in {".mp3", ".jpg"}} == before
+
+
+def test_a_failed_dev_artifact_becomes_a_notice_and_the_analysis_still_completes(
+    env: Any, make_video: MakeVideo
+) -> None:
+    blocker = env.tmp / "막힌곳"
+    blocker.write_text("폴더가 아니다", encoding="utf-8")
+    dev = DevArtifacts(audio_dir=blocker, image_dir=blocker)
+    result = build(env, FakeStt(SPEECH), FakeOcr(), Scenes(), dev=dev).run(
+        make_video(seconds=10), srt_for(env, SHOWN)
+    )
+    assert env.repo.get_session(result.session_id).status is SessionStatus.COMPLETED
+    assert "음성 파일(MP3)을 저장하지 못했습니다." in result.notices
+    assert "화면 캡처 이미지를 저장하지 못했습니다." in result.notices
