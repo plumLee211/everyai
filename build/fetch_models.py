@@ -1,10 +1,14 @@
-"""배포본에 동봉할 모델을 저장소 루트의 `models/`에 내려받는다. 빌드 전에 한 번 실행한다.
+"""배포본에 동봉할 모델을 저장소 루트의 `models/`에 내려받는다.
 
-    .venv\Scripts\python build\fetch_models.py
+빌드(`build/barrierfree.spec`)가 시작될 때 `ensure_models()`를 자동 호출하므로 보통은 따로
+실행할 필요가 없다. 미리 받아 두고 싶으면 직접 실행해도 된다.
+
+    python build/fetch_models.py          (Windows: .venv\\Scripts\\python build\\fetch_models.py)
 
 - 음성 인식(faster-whisper): 앱이 권장할 수 있는 모델 전부(config의 recommend_*).
 - 화면 글자 인식(EasyOCR): 한국어·영어 인식에 필요한 검출/인식 모델.
-이미 받은 파일은 건너뛴다. 인증서 문제로 내려받기가 막히면 curl로 한 번 더 시도한다.
+모델이 모두 있으면 아무것도 받지 않고, 일부만 있으면 없는 것만 받는다. 인증서 문제로 내려받기가
+막히면 curl로 한 번 더 시도한다.
 """
 
 from __future__ import annotations
@@ -84,10 +88,38 @@ def fetch_easyocr() -> None:
         archive.unlink()
 
 
-def main() -> int:
-    MODELS.mkdir(exist_ok=True)
+def _whisper_present(name: str) -> bool:
+    repo_dir = MODELS / f"models--Systran--faster-whisper-{name}"
+    return any(repo_dir.glob("snapshots/*/model.bin"))
+
+
+def missing_models() -> list[str]:
+    """동봉에 필요한 모델 중 아직 없는 것의 이름. 모두 있으면 빈 목록.
+
+    폴더가 비어 있지 않다는 것만으로는 부족하다. 내려받다 끊겨 일부만 있는 경우도 '없음'으로 본다.
+    """
+    missing = [f"whisper {name}" for name in bundled_models() if not _whisper_present(name)]
+    missing += [f"easyocr {name}" for name in EASYOCR_FILES if not (MODELS / name).is_file()]
+    return missing
+
+
+def ensure_models() -> None:
+    """모델이 모두 있으면 건너뛰고, 없는 것이 있으면 내려받는다. 끝내 없으면 빌드를 멈춘다."""
+    MODELS.mkdir(parents=True, exist_ok=True)
+    missing = missing_models()
+    if not missing:
+        print("모델 확인: 필요한 모델이 모두 있어 내려받기를 건너뜁니다.")
+        return
+    print(f"모델 확인: {len(missing)}개가 없어 내려받습니다 -> {', '.join(missing)}")
     fetch_whisper()
     fetch_easyocr()
+    still = missing_models()
+    if still:
+        raise SystemExit(f"모델을 모두 준비하지 못했습니다. 없는 모델: {', '.join(still)}")
+
+
+def main() -> int:
+    ensure_models()
     total = sum(f.stat().st_size for f in MODELS.rglob("*") if f.is_file() and not f.is_symlink())
     print(f"완료: {MODELS} ({total / 1024**3:.2f} GB)")
     return 0
