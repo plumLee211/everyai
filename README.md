@@ -11,9 +11,9 @@
 
 ## 요구 사항
 
-- Python 3.11
-- 영상 분석을 위한 FFmpeg 및 ffprobe
-- 첫 실행 시 음성 인식·OCR 모델을 내려받을 인터넷 연결 또는 별도 모델 파일
+- Python 3.11 (3.12 이상은 지원하지 않습니다)
+- 영상 분석을 위한 FFmpeg 및 ffprobe (`PATH`에서 찾을 수 있어야 합니다. macOS: `brew install ffmpeg`)
+- 첫 영상 분석 때 음성 인식·OCR 모델을 내려받을 인터넷 연결 또는 별도 모델 파일(설정 화면에서 경로 지정)
 
 ## 설치 및 실행
 
@@ -21,10 +21,13 @@
 python3.11 -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 python -m pip install -r requirements.txt
+python -m pip install -e . --no-deps  # src/barrierfree 패키지 설치. 빠뜨리면 "No module named barrierfree"
 python -m barrierfree
 ```
 
-Windows 패키징 절차와 미검증 항목은 [`build/README.md`](build/README.md)를 참고하세요.
+저장소에는 `models/`와 `ffmpeg/` 폴더가 없습니다. 패키징용 폴더라서 개발 실행에는 필요 없습니다.
+
+Windows(`.exe`)와 macOS(`.app`) 패키징 절차와 미검증 항목은 [`build/README.md`](build/README.md)를 참고하세요.
 
 ## 개발
 
