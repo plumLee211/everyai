@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QApplication
 
 from barrierfree.analysis.subtitle_region import RegionEstimate
 from barrierfree.config import AnalysisConfig
+from barrierfree.dev_artifacts import DevArtifacts
 from barrierfree.engines.device import (
     DeviceInfo,
     ModelRecommendation,
@@ -130,6 +131,7 @@ def build_services(
             data_dir=data_dir,
             confirm_region=confirm,
             on_progress=progress,
+            dev_artifacts=DevArtifacts.from_env(),
         )
 
     def region_prompt(estimate: RegionEstimate) -> RegionDecision:

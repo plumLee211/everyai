@@ -258,6 +258,93 @@ def extract_audio(
     return out
 
 
+def save_audio_mp3(
+    path: str | Path, out_path: str | Path, *, cancel: CancelToken | None = None
+) -> Path:
+    """영상의 음성만 원본 음질에 가깝게(VBR 약 190kbps) MP3로 저장한다. 개발용 산출물이다.
+
+    인식용 WAV(16kHz mono)를 다시 인코딩하지 않고 원본 영상에서 뽑는다.
+    실패·취소하면 반쪽 파일을 지운다.
+    """
+    info = probe(path)
+    if not info.has_audio:
+        raise NoAudioStreamError("영상에 오디오 트랙이 없습니다.")
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        proc = _run(
+            [
+                find_binary("ffmpeg"),
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                str(info.path),
+                "-vn",
+                "-c:a",
+                "libmp3lame",
+                "-q:a",
+                "2",
+                str(out),
+            ],
+            _AUDIO_TIMEOUT_S,
+            cancel,
+        )
+        if proc.returncode != 0 or not out.is_file():
+            raise FfmpegError(f"MP3 저장에 실패했습니다: {_stderr_tail(proc.stderr)}")
+    except BaseException:
+        out.unlink(missing_ok=True)
+        raise
+    return out
+
+
+def save_frames_jpg(
+    path: str | Path,
+    out_dir: str | Path,
+    *,
+    interval_s: float = 1.0,
+    cancel: CancelToken | None = None,
+) -> list[Path]:
+    """영상을 `interval_s`초마다 원본 크기 JPG로 캡처한다. 개발용 산출물이다.
+
+    파일 이름은 캡처 순번이다(frame_00012.jpg). 1초 간격이면 번호가 곧 초다.
+    실패·취소하면 만든 폴더를 지운다.
+    """
+    if interval_s <= 0:
+        raise ValueError("interval_s는 0보다 커야 합니다.")
+    info = probe(path)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        proc = _run(
+            [
+                find_binary("ffmpeg"),
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                str(info.path),
+                "-an",
+                "-vf",
+                f"fps=1/{interval_s:g}",
+                "-q:v",
+                "2",
+                "-frame_pts",
+                "1",
+                str(out / "frame_%05d.jpg"),
+            ],
+            _AUDIO_TIMEOUT_S,
+            cancel,
+        )
+        frames = sorted(out.glob("frame_*.jpg"))
+        if proc.returncode != 0 or not frames:
+            raise FfmpegError(f"프레임 캡처에 실패했습니다: {_stderr_tail(proc.stderr)}")
+    except BaseException:
+        shutil.rmtree(out, ignore_errors=True)
+        raise
+    return frames
+
+
 def _even(value: int) -> int:
     return max(2, value - value % 2)
 

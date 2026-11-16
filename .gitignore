@@ -38,3 +38,9 @@ dist/
 build/barrierfree/
 ffmpeg/
 models/
+
+# 개발용 산출물(BARRIERFREE_AUDIO_DIR 등을 지정했을 때 생김)
+docs/*.mp3
+docs/*.srt
+docs/image/
+docs/ocr/

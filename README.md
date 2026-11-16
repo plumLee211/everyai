@@ -53,6 +53,22 @@ pytest
 
 GitHub Actions는 `master` 브랜치 push와 pull request에서 위 세 검사를 실행합니다.
 
+### 분석 중간 산출물 저장(개발용)
+
+분석이 무엇을 들었고 읽었는지 눈과 귀로 확인하려면 폴더를 환경변수로 지정합니다. 지정한 항목만 저장하며, 아무것도 지정하지 않으면(기본) 분석 동작과 결과는 달라지지 않습니다.
+
+| 환경변수 | 저장하는 것 |
+|---|---|
+| `BARRIERFREE_AUDIO_DIR` | 영상 음성(`영상_세션.mp3`)과 같은 이름의 음성 인식 결과(`.srt`) |
+| `BARRIERFREE_IMAGE_DIR` | 1초 간격 화면 캡처(JPG), 영상별 하위 폴더 |
+| `BARRIERFREE_OCR_DIR` | 분석이 읽은 화면 글자를 자막처럼 묶은 `.srt` |
+
+```bash
+BARRIERFREE_AUDIO_DIR=docs BARRIERFREE_OCR_DIR=docs/ocr python -m barrierfree
+```
+
+저장에 실패해도 분석은 계속되고 안내 메시지만 남습니다. 결과 파일(`docs/*.mp3`, `*.srt`, `docs/image/`, `docs/ocr/`)은 gitignore 대상입니다.
+
 ## 문서
 
 포함 문서와 보관 기준은 [`docs/README.md`](docs/README.md)에서 확인할 수 있습니다. 제출용 PDF·DOCX와 외부에서 받은 자료는 저장소에 포함하지 않습니다.
