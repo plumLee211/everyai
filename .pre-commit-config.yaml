@@ -1,13 +1,31 @@
+# `pre-commit install` 한 번으로 커밋 훅과 push 훅이 함께 설치된다.
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
   - repo: local
     hooks:
+      # ---- 커밋 때(수 초): 빠른 검사만 ----
       - id: ruff-check
         name: Ruff
         entry: ruff check --force-exclude
         language: system
         types_or: [python, pyi]
+      - id: mypy
+        name: mypy
+        entry: mypy src
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
       - id: gitleaks
         name: Gitleaks
         entry: gitleaks git --pre-commit --redact --staged --verbose
         language: system
         pass_filenames: false
+      # ---- push 때(1~2분): 전체 테스트 ----
+      - id: pytest
+        name: pytest
+        entry: python -m pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
