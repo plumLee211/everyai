@@ -20,8 +20,7 @@
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-python -m pip install -r requirements.txt
-python -m pip install -e . --no-deps  # src/barrierfree 패키지 설치. 빠뜨리면 "No module named barrierfree"
+python -m pip install -e .   # 의존성(requirements.txt)과 src/barrierfree 패키지를 함께 설치
 python -m barrierfree
 ```
 
@@ -34,7 +33,7 @@ Windows(`.exe`)와 macOS(`.app`) 패키징 절차와 미검증 항목은 [`build
 개발 도구와 git hook은 아래처럼 설치합니다. Gitleaks 8.30.0도 별도로 설치해야 합니다.
 
 ```bash
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements-dev.txt   # 런타임 의존성 + 패키지 + 개발 도구(pytest, ruff, mypy, pre-commit)
 pre-commit install   # 커밋 hook과 push hook이 함께 설치된다
 ```
 
