@@ -29,6 +29,16 @@ Mac에서 각각 빌드한다. 같은 `build/barrierfree.spec`이 OS를 보고 �
 
 결과: `dist\barrierfree\` 폴더(onedir). 폴더째 배포한다(약 3.3GB). 앱은 `_internal\ffmpeg\`(`paths.py`)를 먼저 찾고(`media/ffmpeg.py`의 `find_binary`), 없으면 PATH를 본다.
 
+### Windows PC 없이 빌드하기 (GitHub Actions)
+
+Mac에서는 `.exe`를 만들 수 없으므로 `.github/workflows/build-windows.yml`이 windows runner에서 같은 spec으로 빌드한다.
+Actions 탭 → **Build Windows** → Run workflow(또는 `v*` 태그 푸시)로 실행하고, 끝나면 `barrierfree-windows` 아티팩트(zip, 3일 보관)를 받는다.
+
+- ffmpeg는 BtbN의 win64 LGPL 빌드를 `latest`로 받는다(버전이 고정되지 않는다. 배포 전 버전과 라이선스 고지를 확인한다).
+- 빌드 끝에 앱을 30초 띄워 종료되지 않고 `barrierfree.db`를 만드는지 확인한다(헤드리스 시작 확인뿐이다).
+- 위 "확인 목록"(한글 경로 분석, 재생, 취소 등)은 CI가 대신하지 못한다. 받은 zip을 Windows PC에서 직접 확인해야 한다.
+- `skip_models`를 켜면 모델 없는 개발용 빌드(약 1GB)가 나온다. 배포하지 않는다.
+
 ## macOS (`.app`)
 
 검증 범위: Apple Silicon(arm64) Mac에서 `.app`이 빌드되고, 실행해 DB를 만드는 시작 단계까지 확인했다
