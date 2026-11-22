@@ -113,14 +113,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          $notes = @"
-          Windows 설치 파일이다. ``barrierfree-setup.exe``와 ``barrierfree-setup-*.bin`` 조각을 **모두 같은 폴더에** 받은 뒤 ``barrierfree-setup.exe``를 실행한다.
-
-          - 서명하지 않은 설치 파일이라 Windows SmartScreen 경고가 뜰 수 있다("추가 정보" → "실행").
-          - 모델이 포함돼 있어 첫 실행에 인터넷이 필요 없다. GPU(CUDA) 라이브러리는 동봉하지 않아 CPU로 실행한다.
-          - 제거해도 분석 결과(사용자 AppData)는 남는다.
-          "@
+          # macOS 빌드(build-macos.yml)와 같은 Release를 공유한다. 먼저 끝난 쪽이 만들고, 다른 쪽은 파일만 올린다.
+          # 본문은 두 OS 안내를 모두 담은 build/release-notes.md다.
           $flags = @()
           if ($env:GITHUB_REF_TYPE -ne "tag") { $flags += "--prerelease" }
-          gh release create $env:TAG (Get-ChildItem build\installer-out\*).FullName `
-            --target $env:GITHUB_SHA --title $env:TAG --notes $notes @flags
+          gh release create $env:TAG --target $env:GITHUB_SHA --title $env:TAG --notes-file build/release-notes.md @flags 2>$null
+          # 이미 만들어져 있어 create가 실패해도 괜찮다. 진짜 실패는 아래 upload에서 잡힌다.
+          $global:LASTEXITCODE = 0
+          gh release upload $env:TAG (Get-ChildItem build\installer-out\*).FullName --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Release 업로드 실패(exit code $LASTEXITCODE)" }
