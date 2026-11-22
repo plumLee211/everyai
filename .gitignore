@@ -36,6 +36,7 @@ dist/
 
 # PyInstaller 작업 폴더와 별도로 내려받는 바이너리
 build/barrierfree/
+build/installer-out/
 ffmpeg/
 models/
 
