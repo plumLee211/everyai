@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 120
     env:
       BARRIERFREE_SKIP_MODELS: ${{ inputs.skip_models && '1' || '0' }}
+      # Windows runner의 파이썬은 stdout이 cp1252라 spec·fetch_models의 한글 print가 UnicodeEncodeError로 죽는다.
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
