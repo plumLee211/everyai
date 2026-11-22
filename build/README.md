@@ -86,7 +86,7 @@ open dist/barrierfree.app
 (`v*` 태그 푸시, 또는 Actions 탭 → **Build macOS**에서 `release_tag` 입력). 같은 태그면 Windows 설치 파일과 **같은 Release**에 올라간다.
 받는 방법은 `build/release-notes.md`가 Release 본문으로 안내한다.
 
-- `.app`이 Release 한도(파일당 2GiB)를 넘어 `ditto`로 zip을 만든 뒤 1.9GB 조각(`barrierfree-macos.zip.part-*`)으로 나눈다. 받은 쪽이 `cat`으로 합친다.
+- `.app`이 Release 한도(파일당 2GiB)를 넘어 `ditto`로 zip을 만든 뒤 1.9GB 조각(`barrierfree-macos.zip.part-*`)으로 나눈다. 조각과 함께 `build/install-macos.sh`도 올라가고, 받은 쪽이 `bash install-macos.sh` 한 번으로 합치기·풀기·`xattr` 제거·실행을 한다.
 - **Apple 개발자 계정이 없어 서명·공증을 하지 않는다.** 받은 사람이 `xattr -dr com.apple.quarantine barrierfree.app`을 실행해야 열린다(안 하면 "손상되었다" 경고).
 - ffmpeg는 독립 실행되는 정적 arm64 빌드(martin-riedl)를 쓴다. **GPL 빌드**라 기관 배포 전에 라이선스 고지를 확인한다.
 - Intel Mac은 지원하지 않는다(runner가 Apple Silicon이다).
