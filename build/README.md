@@ -29,15 +29,30 @@ Mac에서 각각 빌드한다. 같은 `build/barrierfree.spec`이 OS를 보고 �
 
 결과: `dist\barrierfree\` 폴더(onedir). 폴더째 배포한다(약 3.3GB). 앱은 `_internal\ffmpeg\`(`paths.py`)를 먼저 찾고(`media/ffmpeg.py`의 `find_binary`), 없으면 PATH를 본다.
 
-### Windows PC 없이 빌드하기 (GitHub Actions)
+### 설치 프로그램 (Inno Setup)
 
-Mac에서는 `.exe`를 만들 수 없으므로 `.github/workflows/build-windows.yml`이 windows runner에서 같은 spec으로 빌드한다.
-Actions 탭 → **Build Windows** → Run workflow(또는 `v*` 태그 푸시)로 실행하고, 끝나면 `barrierfree-windows` 아티팩트(zip, 3일 보관)를 받는다.
+`dist\barrierfree\`를 `build/installer.iss`로 묶으면 설치 프로그램 `build\installer-out\barrierfree-setup.exe`가 나온다
+(Inno Setup 6 이상, 한국어 화면, 사용자 폴더에 관리자 권한 없이 설치 가능, 시작 메뉴·바탕 화면 바로 가기, 제거 지원).
 
+```
+iscc /DAppVersion=0.1.0 build\installer.iss
+```
+
+모델이 들어가면 3GB가 넘어 GitHub Release 첨부 한도(파일당 2GiB)를 넘으므로, 설치 파일을 1.9GB 조각으로 나눈다
+(`barrierfree-setup.exe` + `barrierfree-setup-1.bin`, `-2.bin` …). **조각은 항상 같은 폴더에 두고 `barrierfree-setup.exe`를 실행한다.**
+제거해도 사용자 데이터(AppData)는 남는다.
+
+### Windows PC 없이 빌드하고 테스터에게 전달하기 (GitHub Actions)
+
+Mac에서는 설치 파일을 만들 수 없으므로 `.github/workflows/build-windows.yml`이 windows runner에서 PyInstaller 빌드와 Inno Setup 빌드를 한다.
+
+- **Release로 전달**: `v*` 태그를 푸시하거나, Actions 탭 → **Build Windows** → Run workflow에서 `release_tag`(예: `v0.1.0-test1`)를 적는다. 끝나면 Releases 페이지에 설치 파일과 조각이 올라간다(수동 실행은 prerelease). 테스터는 그 링크에서 받으면 된다.
+- **확인만**: `release_tag`를 비우면 Release 없이 `barrierfree-setup` 아티팩트(3일 보관, GitHub 로그인 필요)로만 올라간다.
+- `skip_models`를 켜면 모델 없는 개발용 빌드(약 1GB)가 나오며 Release에는 올리지 않는다. 배포하지 않는다.
+- 빌드 끝에 설치 프로그램을 조용히 실행해 설치하고, 설치된 앱을 30초 띄워 종료되지 않고 `barrierfree.db`를 만드는지 확인한다(헤드리스 시작 확인뿐이다).
+- 설치 파일에 코드 서명이 없어 SmartScreen 경고("추가 정보" → "실행")가 뜰 수 있다. 기관 배포용은 서명이 필요하다.
 - ffmpeg는 BtbN의 win64 LGPL 빌드를 `latest`로 받는다(버전이 고정되지 않는다. 배포 전 버전과 라이선스 고지를 확인한다).
-- 빌드 끝에 앱을 30초 띄워 종료되지 않고 `barrierfree.db`를 만드는지 확인한다(헤드리스 시작 확인뿐이다).
-- 위 "확인 목록"(한글 경로 분석, 재생, 취소 등)은 CI가 대신하지 못한다. 받은 zip을 Windows PC에서 직접 확인해야 한다.
-- `skip_models`를 켜면 모델 없는 개발용 빌드(약 1GB)가 나온다. 배포하지 않는다.
+- 위 "확인 목록"(한글 경로 분석, 재생, 취소 등)은 CI가 대신하지 못한다. 설치 파일을 Windows PC에서 직접 확인해야 한다.
 
 ## macOS (`.app`)
 
