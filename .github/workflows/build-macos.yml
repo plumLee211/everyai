@@ -80,6 +80,8 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent dist/barrierfree.app barrierfree-macos.zip
           mkdir mac-out
           split -b 1900m -a 2 barrierfree-macos.zip mac-out/barrierfree-macos.zip.part-
+          # 조각을 합쳐 풀고 quarantine을 제거하는 스크립트를 함께 올린다(테스터가 명령 한 줄로 설치한다).
+          cp build/install-macos.sh mac-out/
           ls -l mac-out
       - name: Upload artifact
         if: ${{ github.ref_type != 'tag' && inputs.release_tag == '' }}
