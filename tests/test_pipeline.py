@@ -19,8 +19,8 @@ from barrierfree.analysis.subtitle_region import RegionEstimate, region_rect
 from barrierfree.cancel import CancelledError, CancelToken
 from barrierfree.config import AnalysisConfig
 from barrierfree.dev_artifacts import DevArtifacts
-from barrierfree.engines.ocr import OcrBox
-from barrierfree.engines.stt import SttError
+from barrierfree.engines.ocr import OcrBox, OcrModelError
+from barrierfree.engines.stt import SttError, SttModelError
 from barrierfree.media.ffmpeg import VideoFileNotFoundError, VideoTooLongError
 from barrierfree.media.subtitles import SubtitleParseError, write_srt
 from barrierfree.models import (
@@ -604,3 +604,37 @@ def test_a_failed_dev_artifact_becomes_a_notice_and_the_analysis_still_completes
     assert env.repo.get_session(result.session_id).status is SessionStatus.COMPLETED
     assert "음성 파일(MP3)을 저장하지 못했습니다." in result.notices
     assert "화면 캡처 이미지를 저장하지 못했습니다." in result.notices
+
+
+# ---------- 실패 원인 보존 ----------
+
+
+@pytest.mark.parametrize(
+    ("engine", "error", "model_name"),
+    [
+        ("stt", SttModelError("DLL 초기화 실패"), "음성 인식 모델"),
+        ("ocr", OcrModelError("DLL 초기화 실패"), "화면 글자 인식 모델"),
+    ],
+)
+def test_model_load_failure_names_the_model_and_keeps_the_cause(
+    env: Any, make_video: MakeVideo, engine: str, error: Exception, model_name: str
+) -> None:
+    stt, ocr = FakeStt(SPEECH), FakeOcr()
+
+    def fail() -> None:
+        raise error
+
+    (stt if engine == "stt" else ocr).prepare = fail
+    pipeline = build(env, stt, ocr, Scenes())
+    with pytest.raises(PipelineError) as exc:
+        pipeline.run(make_video(seconds=10), srt_for(env, SHOWN))
+    assert exc.value.code == "ERR-06" and model_name in exc.value.user_message
+    assert exc.value.stage is Stage.MODEL_PREPARE
+    assert "DLL 초기화 실패" in exc.value.detail and "Traceback" in exc.value.detail
+    assert "DLL" not in exc.value.user_message
+
+
+def test_failures_are_written_to_the_log(caplog: pytest.LogCaptureFixture) -> None:
+    explain_error(RuntimeError("원인 추적용"))
+    [record] = [r for r in caplog.records if r.name == "barrierfree.pipeline"]
+    assert "ERR-99" in record.getMessage() and record.exc_info is not None

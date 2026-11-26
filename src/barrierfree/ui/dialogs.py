@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from barrierfree.config import AnalysisConfig
@@ -21,6 +23,7 @@ class Dialogs(Protocol):
     def info(self, title: str, text: str) -> None: ...
     def warn(self, title: str, text: str) -> None: ...
     def confirm(self, title: str, text: str) -> bool: ...
+    def open_folder(self, path: Path) -> None: ...
 
 
 class QtDialogs:
@@ -59,3 +62,7 @@ class QtDialogs:
             QMessageBox.StandardButton.No,
         )
         return bool(answer == QMessageBox.StandardButton.Yes)
+
+    def open_folder(self, path: Path) -> None:
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+            self.warn("폴더 열기 실패", f"아래 폴더를 직접 열어 주세요.\n{path}")

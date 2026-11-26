@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import time
 from collections.abc import Callable
@@ -34,6 +35,7 @@ from barrierfree.analysis.subtitle_region import RegionEstimate
 from barrierfree.cancel import CancelToken
 from barrierfree.config import AnalysisConfig
 from barrierfree.engines.device import DeviceInfo, ModelRecommendation
+from barrierfree.logging_setup import log_dir
 from barrierfree.media.ffmpeg import VideoInfo
 from barrierfree.media.subtitles import LoadedSubtitle, load_subtitle_file
 from barrierfree.pipeline import (
@@ -52,6 +54,8 @@ from barrierfree.ui.register_page import RegisterPage
 from barrierfree.ui.review_page import PlayerLike, ReviewPage
 from barrierfree.ui.review_timer import ActiveTimeTracker
 from barrierfree.ui.worker import AnalysisWorker
+
+logger = logging.getLogger(__name__)
 
 WINDOW_TITLE = "배리어프리 영상 AI 점검 도구"
 BRAND = "영상의 틈"
@@ -167,6 +171,7 @@ class MainWindow(QMainWindow):
         self.progress_page.cancel_requested.connect(self._cancel)
         self.progress_page.retry_requested.connect(self._retry)
         self.progress_page.back_requested.connect(self._back_to_register)
+        self.progress_page.open_log_requested.connect(self._open_log_folder)
         self.review_page.new_analysis_requested.connect(self._new_analysis)
         self.review_page.activity.connect(self._on_review_activity)
 
@@ -230,8 +235,9 @@ class MainWindow(QMainWindow):
                 widget.deleteLater()
         try:
             sessions = self._services.repo.recent_sessions(RECENT_LIMIT)
-        except sqlite3.Error:
-            return  # 기록을 못 읽어도 화면 사용에는 지장이 없다
+        except Exception:  # noqa: BLE001 - 기록을 못 읽어도 화면 사용에는 지장이 없다
+            logger.exception("최근 작업을 읽지 못했습니다")
+            return
         for record in sessions:
             button = QPushButton(record.video_name)
             button.setProperty("recent", True)
@@ -240,6 +246,14 @@ class MainWindow(QMainWindow):
             button.clicked.connect(lambda _checked=False, sid=record.id: self._open_past(sid))
             self.recent_box.addWidget(button)
         theme.repolish(self)
+
+    def _open_log_folder(self) -> None:
+        folder = log_dir(self._services.data_dir)
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.exception("로그 폴더를 만들지 못했습니다")
+        self._services.dialogs.open_folder(folder)
 
     def _show_help(self) -> None:
         self._services.dialogs.info("도움말", HELP_TEXT)

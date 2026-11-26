@@ -77,6 +77,7 @@ def test_unexpected_exception_becomes_err_99_instead_of_crashing(qtbot: QtBot) -
     with qtbot.waitSignal(worker.failed, timeout=5000) as blocker:
         worker.start()
     assert blocker.args[0].code == "ERR-99"
+    assert "ZeroDivisionError: bug" in blocker.args[0].detail
     worker.wait(5000)
 
 

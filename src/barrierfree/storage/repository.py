@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from collections.abc import Iterable
@@ -27,6 +28,8 @@ from barrierfree.models import (
     Verdict,
 )
 from barrierfree.storage.db import connect, migrate
+
+logger = logging.getLogger(__name__)
 
 _TERMINAL = {SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.CANCELLED}
 
@@ -79,6 +82,31 @@ class StageMetric:
     processed_count: int | None
     processed_unit: str | None
     cache_hit: bool
+
+
+def _to_session(row: sqlite3.Row) -> SessionRecord:
+    region = row["subtitle_region_json"]
+    return SessionRecord(
+        id=row["id"],
+        video_path=row["video_path"],
+        video_name=row["video_name"],
+        video_sha256=row["video_sha256"],
+        video_duration_s=row["video_duration_ms"] / 1000,
+        subtitle_source=SubtitleSource(row["subtitle_source"]),
+        subtitle_path=row["subtitle_path"],
+        generated_srt_path=row["generated_srt_path"],
+        subtitle_region=json.loads(region) if region else None,
+        status=SessionStatus(row["status"]),
+        stt_model_name=row["stt_model_name"],
+        ocr_engine_name=row["ocr_engine_name"],
+        compute_device=row["compute_device"],
+        config_snapshot=json.loads(row["config_snapshot_json"]),
+        review_duration_ms=row["review_duration_ms"],
+        error_code=row["error_code"],
+        created_at=row["created_at"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+    )
 
 
 class Repository:
@@ -154,13 +182,22 @@ class Repository:
         return session_id
 
     def recent_sessions(self, limit: int = 5) -> list[SessionRecord]:
-        """분석이 끝난 최근 세션(최신순). 사이드바의 '최근 작업'에 쓴다."""
+        """분석이 끝난 최근 세션(최신순). 사이드바의 '최근 작업'에 쓴다.
+
+        한 번의 조회로 만든다(id만 읽고 다시 조회하지 않는다). 읽을 수 없는 행은 건너뛴다.
+        """
         rows = self.connection().execute(
-            "SELECT id FROM analysis_session WHERE status = ?"
+            "SELECT * FROM analysis_session WHERE status = ?"
             " ORDER BY COALESCE(finished_at, created_at) DESC, rowid DESC LIMIT ?",
             (SessionStatus.COMPLETED.value, limit),
         ).fetchall()
-        return [self.get_session(row["id"]) for row in rows]
+        records: list[SessionRecord] = []
+        for row in rows:
+            try:
+                records.append(_to_session(row))
+            except (ValueError, TypeError):
+                logger.exception("최근 작업의 분석 기록을 읽지 못했습니다: %s", row["id"])
+        return records
 
     def get_session(self, session_id: str) -> SessionRecord:
         row = self.connection().execute(
@@ -168,28 +205,7 @@ class Repository:
         ).fetchone()
         if row is None:
             raise KeyError(session_id)
-        region = row["subtitle_region_json"]
-        return SessionRecord(
-            id=row["id"],
-            video_path=row["video_path"],
-            video_name=row["video_name"],
-            video_sha256=row["video_sha256"],
-            video_duration_s=row["video_duration_ms"] / 1000,
-            subtitle_source=SubtitleSource(row["subtitle_source"]),
-            subtitle_path=row["subtitle_path"],
-            generated_srt_path=row["generated_srt_path"],
-            subtitle_region=json.loads(region) if region else None,
-            status=SessionStatus(row["status"]),
-            stt_model_name=row["stt_model_name"],
-            ocr_engine_name=row["ocr_engine_name"],
-            compute_device=row["compute_device"],
-            config_snapshot=json.loads(row["config_snapshot_json"]),
-            review_duration_ms=row["review_duration_ms"],
-            error_code=row["error_code"],
-            created_at=row["created_at"],
-            started_at=row["started_at"],
-            finished_at=row["finished_at"],
-        )
+        return _to_session(row)
 
     def set_status(
         self, session_id: str, status: SessionStatus, *, error_code: str | None = None

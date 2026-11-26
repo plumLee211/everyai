@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -44,12 +46,15 @@ _WAIT_NOTES: dict[Stage, str] = {
     Stage.RESULT_SAVE: "검수 항목 생성 대기",
 }
 CAUTION = "분석 중에는 컴퓨터를 종료하지 마세요."
+DETAIL_SHOW = "자세히"
+DETAIL_HIDE = "접기"
 
 
 class ProgressPage(QWidget):
     cancel_requested = pyqtSignal()
     retry_requested = pyqtSignal()
     back_requested = pyqtSignal()
+    open_log_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -74,6 +79,14 @@ class ProgressPage(QWidget):
         self.error_label = QLabel("")
         self.retry_button = QPushButton("다시 시도")
         self.back_button = QPushButton("처음으로")
+        self.detail_button = QPushButton(DETAIL_SHOW)
+        self.copy_button = QPushButton("오류 정보 복사")
+        self.log_button = QPushButton("로그 폴더 열기")
+        self.detail_view = QPlainTextEdit()
+        self.detail_view.setReadOnly(True)
+        self.detail_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.detail_view.setMinimumHeight(180)
+        self._error_report = ""
         self.stage_container = QVBoxLayout()
         self.stage_container.setSpacing(4)
 
@@ -90,6 +103,13 @@ class ProgressPage(QWidget):
         buttons.addWidget(self.back_button)
         buttons.addStretch(1)
         error_layout.addLayout(buttons)
+        diagnostics = QHBoxLayout()
+        diagnostics.addWidget(self.detail_button)
+        diagnostics.addWidget(self.copy_button)
+        diagnostics.addWidget(self.log_button)
+        diagnostics.addStretch(1)
+        error_layout.addLayout(diagnostics)
+        error_layout.addWidget(self.detail_view)
 
         status_box = QFrame()
         status_box.setProperty("tile", True)
@@ -132,6 +152,9 @@ class ProgressPage(QWidget):
         self.cancel_button.clicked.connect(self._cancel)
         self.retry_button.clicked.connect(self.retry_requested.emit)
         self.back_button.clicked.connect(self.back_requested.emit)
+        self.detail_button.clicked.connect(self._toggle_detail)
+        self.copy_button.clicked.connect(self._copy_error)
+        self.log_button.clicked.connect(self.open_log_requested.emit)
         self.start("")
 
     # ----- 조회 (테스트·접근성) -----
@@ -157,6 +180,9 @@ class ProgressPage(QWidget):
         self.percent_label.setText("")
         self.progress_bar.setRange(0, 0)
         self.error_panel.setHidden(True)
+        self._error_report = ""
+        self.detail_view.clear()
+        self._set_detail_open(False)
         self.caution_banner.setHidden(False)
         self.cancel_button.setHidden(False)
         self.cancel_button.setEnabled(True)
@@ -187,8 +213,16 @@ class ProgressPage(QWidget):
     def show_error(self, error: PipelineError) -> None:
         if error.stage in self._states:
             self._states[error.stage] = "FAILED"
+        for running, state in self._states.items():
+            if state == "RUNNING":  # 모델 준비처럼 끝났다는 알림 없이 실패한 행
+                self._states[running] = "FAILED"
         stage = f"{STAGE_LABELS[error.stage]} 단계에서 " if error.stage in STAGE_LABELS else ""
-        self.error_label.setText(f"{stage}분석에 실패했습니다. {error.user_message} ({error.code})")
+        summary = f"{stage}분석에 실패했습니다. {error.user_message} ({error.code})"
+        self.error_label.setText(summary)
+        self._error_report = f"{summary}\n\n{error.detail}".rstrip()
+        self.detail_view.setPlainText(error.detail)
+        self._set_detail_open(False)
+        self.detail_button.setHidden(not error.detail)
         self.error_panel.setHidden(False)
         self.cancel_button.setHidden(True)
         self.progress_bar.setRange(0, 100)
@@ -201,6 +235,18 @@ class ProgressPage(QWidget):
         self.status_label.setText("취소 중입니다. 현재 작업이 끝나면 중단됩니다.")
 
     # ----- 내부 -----
+
+    def _set_detail_open(self, is_open: bool) -> None:
+        self.detail_view.setHidden(not is_open)
+        self.detail_button.setText(DETAIL_HIDE if is_open else DETAIL_SHOW)
+
+    def _toggle_detail(self) -> None:
+        self._set_detail_open(self.detail_view.isHidden())
+
+    def _copy_error(self) -> None:
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(self._error_report)
 
     def _cancel(self) -> None:
         if self._cancel_sent:
