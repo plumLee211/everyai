@@ -14,9 +14,11 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import sqlite3
 import time
+import traceback
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -65,6 +67,7 @@ from barrierfree.storage.cache import CacheKey, CacheType, FileCache, hash_file,
 from barrierfree.storage.repository import Repository
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 class Stage(StrEnum):
@@ -115,8 +118,10 @@ class PipelineError(Exception):
         *,
         stage: Stage | None = None,
         session_id: str | None = None,
+        detail: str = "",
     ) -> None:
         super().__init__(f"{code}: {user_message}")
+        self.detail = detail  # 원인 추적용(예외 종류·메시지·traceback). 문구에는 넣지 않는다.
         self.code = code
         self.user_message = user_message
         self.stage = stage
@@ -183,7 +188,15 @@ def _to_error(exc: BaseException, stage: Stage | None, session_id: str | None) -
         ((c, m) for cls, c, m in _ERRORS if isinstance(exc, cls)),  # 구체적인 예외가 먼저다
         _UNKNOWN,
     )
-    return PipelineError(code, message, stage=stage, session_id=session_id)
+    logger.error("%s (%s) 단계=%s 세션=%s", code, message, stage, session_id, exc_info=exc)
+    return PipelineError(
+        code, message, stage=stage, session_id=session_id, detail=format_detail(exc)
+    )
+
+
+def format_detail(exc: BaseException) -> str:
+    """원인 예외까지 이어진 traceback 문자열."""
+    return "".join(traceback.format_exception(exc))
 
 
 def explain_error(exc: BaseException) -> PipelineError:

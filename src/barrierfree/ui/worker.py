@@ -21,6 +21,7 @@ from barrierfree.pipeline import (
     PipelineResult,
     RegionDecision,
     StageEvent,
+    format_detail,
 )
 
 Runner = Callable[
@@ -64,9 +65,13 @@ class AnalysisWorker(QThread):
             self.cancelled.emit()
         except PipelineError as error:
             self.failed.emit(error)
-        except Exception:  # noqa: BLE001 - 어떤 예외도 앱을 종료시키지 않는다
-            logger.exception("분석 중 예상하지 못한 오류")  # 원인 추적용(사용자에게는 코드만 보임)
-            self.failed.emit(PipelineError("ERR-99", "분석 중 알 수 없는 오류가 발생했습니다."))
+        except Exception as exc:  # noqa: BLE001 - 어떤 예외도 앱을 종료시키지 않는다
+            logger.exception("분석 중 예상하지 못한 오류")
+            self.failed.emit(
+                PipelineError(
+                    "ERR-99", "분석 중 알 수 없는 오류가 발생했습니다.", detail=format_detail(exc)
+                )
+            )
         else:
             self.succeeded.emit(result)
 

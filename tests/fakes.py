@@ -75,6 +75,7 @@ class FakeDialogs:
         self.warnings: list[tuple[str, str]] = []
         self.confirms: list[tuple[str, str]] = []
         self.csv_default_names: list[str] = []
+        self.opened_folders: list[Path] = []
 
     def ask_open_video(self) -> Path | None:
         return self.video
@@ -95,3 +96,6 @@ class FakeDialogs:
     def confirm(self, title: str, text: str) -> bool:
         self.confirms.append((title, text))
         return self.confirm_answer
+
+    def open_folder(self, path: Path) -> None:
+        self.opened_folders.append(path)

@@ -762,3 +762,29 @@ def test_brand_and_default_work_title_follow_the_design(
     env = make_env(qtbot, repo, tmp_path)
     assert env.window.product_label.text() == "영상의 틈"
     assert env.window.work_label.text() == "새 영상 점검"
+
+
+# ---------- 안정성 ----------
+
+
+def test_an_unexpected_error_in_recent_works_does_not_break_the_window(
+    qtbot: QtBot, repo: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(limit: int = 5) -> list[Any]:
+        raise KeyError("2f83d0cd")
+
+    monkeypatch.setattr(repo, "recent_sessions", broken)
+    env = make_env(qtbot, repo, tmp_path)
+    assert recent_buttons(env) == []
+    env.start_analysis()
+    env.wait_for("review_page")  # 분석 성공 뒤 목록 갱신에서 꺼지지 않는다
+
+
+def test_log_folder_opens_from_the_error_panel(
+    qtbot: QtBot, repo: Repository, tmp_path: Path
+) -> None:
+    env = make_env(qtbot, repo, tmp_path, failures=1)
+    env.start_analysis()
+    qtbot.waitUntil(lambda: not env.window.progress_page.error_panel.isHidden(), timeout=8000)
+    env.window.progress_page.log_button.click()
+    assert env.dialogs.opened_folders == [tmp_path / "data" / "logs"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PyQt6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
 from barrierfree.pipeline import PipelineError, Stage, StageEvent
@@ -139,3 +140,64 @@ def test_restarting_resets_everything(qtbot: QtBot) -> None:
     assert all(page.stage_state(s) == "대기" for s in CORE_STAGES)
     assert page.error_panel.isHidden() and not page.cancel_button.isHidden()
     assert page.cancel_button.isEnabled()
+
+
+# ---------- 상세 오류 ----------
+
+
+DETAIL = "Traceback ...\nOSError: WinError 1114"
+
+
+def failed_page(qtbot: QtBot, detail: str = DETAIL) -> ProgressPage:
+    page = make_page(qtbot)
+    page.on_event(event(Stage.OCR, "RUNNING", 0.0))
+    page.on_event(event(Stage.MODEL_PREPARE, "RUNNING"))
+    page.show_error(
+        PipelineError(
+            "ERR-06", "모델을 불러올 수 없습니다.", stage=Stage.MODEL_PREPARE, detail=detail
+        )
+    )
+    return page
+
+
+def test_error_detail_is_folded_until_asked_for(qtbot: QtBot) -> None:
+    page = failed_page(qtbot)
+    assert page.detail_view.isHidden()
+    page.detail_button.click()
+    assert not page.detail_view.isHidden()
+    assert "WinError 1114" in page.detail_view.toPlainText()
+    page.detail_button.click()
+    assert page.detail_view.isHidden()
+
+
+def test_copy_puts_code_stage_and_detail_on_the_clipboard(qtbot: QtBot) -> None:
+    page = failed_page(qtbot)
+    page.copy_button.click()
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    text = clipboard.text()
+    assert "ERR-06" in text and "모델 준비" in text and "WinError 1114" in text
+
+
+def test_log_folder_button_emits_a_signal(qtbot: QtBot) -> None:
+    page = failed_page(qtbot)
+    with qtbot.waitSignal(page.open_log_requested, timeout=1000):
+        page.log_button.click()
+
+
+def test_error_without_detail_hides_the_detail_toggle(qtbot: QtBot) -> None:
+    page = failed_page(qtbot, detail="")
+    assert page.detail_button.isHidden() and page.detail_view.isHidden()
+
+
+def test_model_preparation_row_is_not_left_running_after_a_failure(qtbot: QtBot) -> None:
+    page = failed_page(qtbot)
+    assert page.stage_state(Stage.MODEL_PREPARE) == "실패"
+    assert page.stage_state(Stage.OCR) == "실패"
+
+
+def test_restarting_folds_and_clears_the_detail(qtbot: QtBot) -> None:
+    page = failed_page(qtbot)
+    page.detail_button.click()
+    page.start("다음 영상.mp4")
+    assert page.detail_view.isHidden() and page.detail_view.toPlainText() == ""

@@ -7,14 +7,22 @@ from pathlib import Path
 import pytest
 
 from barrierfree import app as app_module
-from barrierfree.app import build_services, default_data_dir, ensure_ffmpeg
+from barrierfree.app import (
+    acquire_data_lock,
+    build_services,
+    default_data_dir,
+    ensure_ffmpeg,
+)
 from barrierfree.engines.device import DeviceInfo
 from barrierfree.engines.ocr import EasyOcrEngine
 from barrierfree.engines.stt import FasterWhisperEngine
 from barrierfree.media.ffmpeg import FfmpegNotFoundError
 from barrierfree.pipeline import AnalysisPipeline
 from barrierfree.settings import AppSettings
+from barrierfree.storage.repository import Repository
+from tests.corrupt import corrupt_session_pk_index
 from tests.fakes import FakeDialogs
+from tests.test_storage import _session
 
 CPU = DeviceInfo("Intel i5", 8, 16.0, False)
 GPU = DeviceInfo("Xeon", 16, 64.0, True)
@@ -178,3 +186,45 @@ def test_users_model_dir_beats_the_bundled_one(
         assert made._ocr._model_dir == "D:/mine"  # noqa: SLF001
     finally:
         services.repo.close_all()
+
+
+def test_a_damaged_database_is_repaired_at_startup_and_the_user_is_told(tmp_path: Path) -> None:
+    repo = Repository(tmp_path / "barrierfree.db")
+    session_id = _session(repo)
+    repo.complete_session(session_id, [])
+    repo.close_all()
+    corrupt_session_pk_index(tmp_path / "barrierfree.db", session_id)
+
+    dialogs = FakeDialogs()
+    services = build_services(tmp_path, dialogs, device=CPU)
+
+    assert services.repo.get_session(session_id).id == session_id
+    [(title, text)] = dialogs.warnings
+    assert "기록" in title and "db-backup" in text
+    services.repo.close_all()
+
+
+def test_a_healthy_start_shows_no_database_warning(tmp_path: Path) -> None:
+    dialogs = FakeDialogs()
+    build_services(tmp_path, dialogs, device=CPU).repo.close_all()
+    assert dialogs.warnings == []
+
+
+def test_a_second_instance_does_not_repair_the_database(tmp_path: Path) -> None:
+    """실행 중인 다른 앱이 쓰고 있을 수 있는 파일은 손대지 않는다."""
+    path = tmp_path / "barrierfree.db"
+    repo = Repository(path)
+    session_id = _session(repo)
+    repo.complete_session(session_id, [])
+    repo.close_all()
+    corrupt_session_pk_index(path, session_id)
+
+    build_services(tmp_path, FakeDialogs(), device=CPU, repair_database=False).repo.close_all()
+
+    assert not (tmp_path / "db-backup").exists()
+
+
+def test_only_the_first_instance_gets_the_data_lock(tmp_path: Path) -> None:
+    first, second = acquire_data_lock(tmp_path), acquire_data_lock(tmp_path)
+    assert first is not None and second is None
+    first.unlock()

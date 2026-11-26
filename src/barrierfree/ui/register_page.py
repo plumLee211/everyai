@@ -130,7 +130,7 @@ class RegisterPage(QWidget):
         theme.primary(self.start_button)
 
         self.video_error_label = theme.role(QLabel(""), "error")
-        for label in (self.hint_label, self.notice_label, self.video_error_label,
+        for label in (self.notice_label, self.video_error_label,
                       self.subtitle_error_label, self.subtitle_info_label, self.intro_label):
             label.setWordWrap(True)
         self.video_error_label.setVisible(False)
@@ -180,7 +180,9 @@ class RegisterPage(QWidget):
         support = theme.role(QLabel(SUPPORTED_NOTE), "caption")
         center = Qt.AlignmentFlag.AlignHCenter
         drop_layout.addWidget(icon, alignment=center)
-        drop_layout.addWidget(self.hint_label, alignment=center)
+        # 정렬을 주면 라벨 폭이 글자 폭에 딱 맞아 글꼴 차이에 깨진다.
+        # 폭 전체를 쓰고 라벨 안에서 가운데 정렬한다.
+        drop_layout.addWidget(self.hint_label)
         drop_layout.addWidget(support, alignment=center)
         drop_layout.addWidget(self.video_button, alignment=center)
         self.hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
