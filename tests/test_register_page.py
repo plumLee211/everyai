@@ -230,3 +230,19 @@ def test_pick_buttons_use_the_dialogs_and_ignore_cancel(qtbot: QtBot) -> None:
     dialogs.subtitle = Path("/v/선택.srt")
     page.subtitle_button.click()
     assert page.subtitle_path == Path("/v/선택.srt")
+
+
+@pytest.mark.parametrize("font_px", [15, 24])
+def test_the_pick_a_video_hint_is_never_wrapped_or_clipped(qtbot: QtBot, font_px: int) -> None:
+    """Windows에서 두 줄로 나뉘고 위아래가 잘렸다. 폭이 글자 폭에 딱 맞으면 글꼴 차이에 깨진다."""
+    page = make_page(qtbot)
+    page.hint_label.setStyleSheet(f"font-size: {font_px}px; font-weight: 600;")
+    page.resize(1100, 850)
+    page.show()
+    qtbot.waitExposed(page)
+    label = page.hint_label
+    metrics = label.fontMetrics()
+    assert not label.wordWrap()
+    assert label.width() >= 2 * metrics.horizontalAdvance(label.text())
+    assert label.height() >= label.sizeHint().height()  # 레이아웃에 눌리지 않았다
+    assert label.height() >= metrics.tightBoundingRect(label.text()).height()  # 글자가 들어간다
