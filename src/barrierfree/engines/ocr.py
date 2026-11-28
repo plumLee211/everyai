@@ -7,6 +7,7 @@ OCR은 영상당 한 번만 실행하고, 영역별 분리(자막/일반 화면 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -26,6 +27,16 @@ Rect = tuple[float, float, float, float]  # 정규화 좌표 (x, y, w, h), 0~1
 
 _DIFF_SIZE = (64, 36)
 _SAME_POSITION_DISTANCE = 0.25  # 같은 글자를 같은 자리로 볼 중심 거리(프레임 비율)
+# 같은 묶음 안에서 서로 바뀌면 뜻이 달라지는 조건어. 한글 한두 글자의 오인식은 흔해서, 글자 차이가
+# 아니라 목록의 낱말이 다른 낱말로 바뀐 경우만 다른 내용으로 본다. 목록 밖의 변화는 알아채지 못한다.
+_CONDITION_GROUPS = (
+    ("이상", "이하", "초과", "미만"),
+    ("부터", "까지"),
+    ("가능", "불가"),
+    ("부과", "면제"),
+)
+# '불가능'은 '가능'이 아니라 '불가'로 읽어야 해서 먼저 맞춘다. 낱말은 앞 두 글자로 구분한다.
+_CONDITION_WORD = re.compile(r"불가(?:능)?|가능|이상|이하|초과|미만|부터|까지|부과|면제")
 
 
 class OcrError(Exception):
@@ -178,17 +189,40 @@ def _center(box: Rect) -> tuple[float, float]:
     return box[0] + box[2] / 2, box[1] + box[3] / 2
 
 
-def _value_changed(a: str, b: str) -> bool:
-    """두 글자의 차이에 '숫자가 다른 숫자로 바뀐' 부분이 있는가.
+def _digits(text: str) -> str:
+    return "".join(re.findall(r"\d", text))
 
-    전화번호·날짜·수치의 숫자가 바뀐 것은 OCR 잡음이 아니라 화면의 실제 변화일 수 있다. 이를 같은
-    구간으로 합치면 두 번째 값이 사라져 음성 전달 여부를 점검할 수 없다. 숫자가 글자로 잘못
-    읽히거나(5678→567S) 빠진 경우는 잡음으로 보고 계속 병합한다.
+
+def _condition_swapped(a: str, b: str) -> bool:
+    """한쪽의 조건어가 없어지고, 같은 묶음의 다른 조건어가 생겼는가."""
+    left = Counter(word[:2] for word in _CONDITION_WORD.findall(a))
+    right = Counter(word[:2] for word in _CONDITION_WORD.findall(b))
+    lost, gained = left - right, right - left
+    return any(
+        any(word in lost for word in group) and any(word in gained for word in group)
+        for group in _CONDITION_GROUPS
+    )
+
+
+def _value_changed(a: str, b: str) -> bool:
+    """두 글자의 차이가 OCR 잡음이 아니라 값이나 조건의 변화일 수 있는가.
+
+    이를 같은 구간으로 합치면 두 번째 내용이 사라져 음성 전달 여부를 점검할 수 없다.
+    다음 중 하나면 합치지 않는다.
+    - 숫자가 다른 숫자로 바뀐 부분이 있다.
+    - 숫자의 개수는 같은데 순서대로 이은 값이 다르다(15→50은 글자 정렬상 교체로 보이지 않는다).
+    - 정해 둔 조건어가 같은 묶음의 다른 조건어로 바뀌었다.
+
+    숫자가 글자로 잘못 읽히거나(5678→567S) 빠진 경우는 잡음으로 보고 계속 병합한다. 그래서
+    실제로 자릿수가 줄어든 변화(150→50)는 글자만으로 구분하지 못하고 합쳐진다.
     """
+    digits_a, digits_b = _digits(a), _digits(b)
+    if len(digits_a) == len(digits_b) and digits_a != digits_b:
+        return True
     for tag, i1, i2, j1, j2 in SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         if tag == "replace" and a[i1:i2].isdigit() and b[j1:j2].isdigit():
             return True
-    return False
+    return _condition_swapped(a, b)
 
 
 @dataclass
