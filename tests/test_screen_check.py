@@ -307,5 +307,37 @@ def test_issues_are_sorted_and_carry_ocr_confidence() -> None:
     assert issues[0].confidence == pytest.approx(0.7)
 
 
+# ---------- 비교할 음성이 하나도 없음 ----------
+# 오디오 트랙이 없거나 받아쓰기가 빈 경우다. 화면 값이 음성에 '없다'고 말할 근거가 없다.
+
+
+def test_without_any_speech_a_screen_value_is_undetermined_not_missing() -> None:
+    [issue] = check([txt(PHONE, 60, 65)], [])
+    assert issue.kind is IssueKind.NO_SPEECH_TO_COMPARE
+    assert issue.verdict is Verdict.UNDETERMINED
+    assert "비교할 음성이 없어" in issue.reason and "전화번호" in issue.reason
+    assert issue.comparison_text == PHONE and issue.speech_text is None
+
+
+def test_without_any_speech_each_screen_text_is_listed_once_even_if_always_shown() -> None:
+    always = txt("접수 4월 1일 문의 02-1234-5678", 0, 290, box=CORNER)
+    issues = check([always, txt("참가비 5천 원", 30, 35)], [])
+    assert [i.kind for i in issues] == [IssueKind.NO_SPEECH_TO_COMPARE] * 2
+
+
+def test_without_any_speech_a_matching_subtitle_is_still_mentioned() -> None:
+    [issue] = check([txt(PHONE, 60, 65)], [], [SubtitleCue(60, 65, PHONE)])
+    assert issue.evidence["also_in_subtitle"] is True
+
+
+def test_without_any_speech_text_without_values_is_still_ignored() -> None:
+    assert check([txt("복지 서비스 안내", 10, 20)], []) == []
+
+
+def test_any_speech_at_all_keeps_the_ordinary_check() -> None:
+    [issue] = check([txt(PHONE, 60, 65)], [sp(200, 202, "다른 이야기")])
+    assert issue.kind is IssueKind.SCREEN_ONLY_INFO
+
+
 def test_no_inputs_no_issues() -> None:
     assert check([], []) == []

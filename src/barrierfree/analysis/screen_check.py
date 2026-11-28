@@ -178,6 +178,32 @@ def _confidence(text: ScreenText) -> float:
     return round(min(1.0, max(0.0, text.confidence)), 3)
 
 
+def _no_speech_issue(text: ScreenText, entities: list[Entity], in_subtitle: bool) -> Issue:
+    """음성이 하나도 없으면(오디오 없음, 빈 받아쓰기) '전달되지 않았다'고 말할 근거가 없다."""
+    names = ", ".join(f"{ENTITY_KIND_LABELS[e.kind]} '{e.raw}'" for e in entities)
+    reason = (
+        f"자동 판단 불가: 비교할 음성이 없어 화면의 {names}이(가) "
+        "음성으로 전달되는지 확인하지 못했습니다."
+    )
+    evidence: dict[str, object] = {
+        "entities": [{"kind": e.kind.value, "value": e.value, "raw": e.raw} for e in entities]
+    }
+    if in_subtitle:
+        evidence["also_in_subtitle"] = True
+        reason += _ALSO_IN_SUBTITLE
+    return Issue(
+        source=IssueSource.M2,
+        kind=IssueKind.NO_SPEECH_TO_COMPARE,
+        verdict=Verdict.UNDETERMINED,
+        start_s=text.start_s,
+        end_s=text.end_s,
+        reason=reason,
+        comparison_text=text.text,
+        confidence=_confidence(text),
+        evidence=evidence,
+    )
+
+
 def _unspoken_while_shown(
     text: ScreenText,
     entities: list[Entity],
@@ -252,6 +278,9 @@ def check_screen(
         if not entities:
             continue
         in_subtitle = _in_subtitle(text, entities, cues, config)
+        if not speech:
+            issues.append(_no_speech_issue(text, entities, in_subtitle))
+            continue
         near_segments = _near(text, speech_entities, config.screen_near_window_s)
 
         if (text.end_s - text.start_s) / max(duration_s, 1.0) >= config.always_visible_ratio:

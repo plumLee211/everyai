@@ -279,6 +279,7 @@
   - **짧은 날짜**: 기준인 화면 글자는 엄격하게 읽고, 비교 대상인 음성·자막의 핵심 정보는 짧은 날짜(`3.15`, `3/15`)도 날짜로 읽는다(`lenient_dates`).
   - **사전 처리**: 자막 출처가 OCR이고 자막 영역이 있으면, 자막 영역 안의 글자는 이미 자막으로 쓰였으므로 이 단계 대상에서 뺀다(`split_by_region`).
   - **점검 대상에서 빠지는 화면 글자**: 핵심 정보(RUL-02)가 하나도 추출되지 않은 글자. 같은 시점의 자막과 같다는 이유로는 빼지 않는다. 지적을 낼 때 자막에도 있으면(자막에 포함되거나 유사도가 `screen_merge_similarity=0.85` 이상이고 값이 모두 일치) `evidence.also_in_subtitle=True`와 안내 문장을 덧붙인다.
+  - **비교할 음성이 없음**: 음성 구간이 하나도 없으면(오디오 트랙 없음, 빈 받아쓰기) 핵심 정보가 있는 확실한 화면 글자마다 `NO_SPEECH_TO_COMPARE` / `UNDETERMINED`를 올리고, 아래의 상시 표시·일반 판정은 하지 않는다.
   - **상시 표시 정보**: 표시 시간 ÷ `max(영상 길이, 1)`이 `always_visible_ratio=0.7` 이상이면, 표시 구간 ±`screen_near_window_s` 안에서 말하지 않은 값이 있을 때 한 건만 올린다. 영상 전체에서 말하지 않은 값이 있으면 `ALWAYS_ON_SCREEN`, 모두 다른 시점에서는 말했으면 `MENTIONED_ELSEWHERE`이며 둘 다 `REVIEW_REQUIRED`다.
   - **일반 판정**: 표시 구간 ±`screen_near_window_s=5.0`초 안의 음성 값과 비교해 값마다 분류한다.
 
@@ -798,7 +799,7 @@
 | `SubtitleSource` (4종) | `FILE`(자막 파일), `OCR`(영상 속 자막을 추출), `NONE`(자막 없음), `UNKNOWN`(세션 생성 직후, 아직 정해지지 않음) |
 | `SessionStatus` (6종) | `PREPARING`, `ANALYZING`, `AWAITING_CONFIRMATION`(자막 영역 확인 대기), `COMPLETED`, `FAILED`, `CANCELLED` |
 
-**`IssueKind` (11종)**
+**`IssueKind` (12종)**
 
 | 출처 | 값 | 화면 라벨 | 만드는 기능 |
 |---|---|---|---|
@@ -809,6 +810,7 @@
 | M1 | `STT_UNCERTAIN` | 음성 확인 필요 | ANL-07, ANL-08(강등) |
 | M2 | `SCREEN_ONLY_INFO` | 화면 정보 누락 의심 | ANL-08 |
 | M2 | `SCREEN_VALUE_MISMATCH` | 화면 값 확인 필요 | ANL-08 |
+| M2 | `NO_SPEECH_TO_COMPARE` | 비교할 음성 없음 | ANL-08 |
 | M2 | `MENTIONED_ELSEWHERE` | 전달 시점 확인 필요 | ANL-08 |
 | M2 | `ALWAYS_ON_SCREEN` | 영상 내내 표시되는 정보 | ANL-08 |
 | M2 | `OCR_UNCERTAIN` | 화면 확인 필요 | ANL-08 |
