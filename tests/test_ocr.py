@@ -160,6 +160,67 @@ def test_digit_misread_as_a_letter_or_dropped_is_still_jitter(misread: str) -> N
     assert len(merge_observations(observations, CFG, 1.0).texts) == 1
 
 
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        # 글자 정렬로는 '1을 지우고 0을 더함'이 되어 숫자 교체로 보이지 않는 변화
+        ("참가비 15만원 납부", "참가비 50만원 납부"),
+        ("올해 지원 대상 인원은 총 150000명입니다", "올해 지원 대상 인원은 총 500000명입니다"),
+        ("문의 전화 012-345-1500", "문의 전화 012-345-5100"),
+    ],
+)
+def test_reordered_digits_are_a_different_value(before: str, after: str) -> None:
+    observations = [obs(0.0, box(before)), obs(1.0, box(after))]
+    assert [t.text for t in merge_observations(observations, CFG, 1.0).texts] == [before, after]
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("만 65세 이상 어르신 무료 접종 대상입니다", "만 65세 이하 어르신 무료 접종 대상입니다"),
+        (
+            "신청 인원이 30명 초과하면 마감하고 안내합니다",
+            "신청 인원이 30명 미만하면 마감하고 안내합니다",
+        ),
+        (
+            "접수는 3월 2일부터 시청 민원실에서 받습니다",
+            "접수는 3월 2일까지 시청 민원실에서 받습니다",
+        ),
+        (
+            "주말에는 건물 지하 주차장 이용이 가능합니다",
+            "주말에는 건물 지하 주차장 이용이 불가합니다",
+        ),
+        (
+            "주말에는 건물 지하 주차장 이용이 가능합니다",
+            "주말에는 건물 지하 주차장 이용이 불가능합니다",
+        ),
+        ("기한이 지난 신청에는 수수료를 부과합니다", "기한이 지난 신청에는 수수료를 면제합니다"),
+    ],
+)
+def test_swapped_condition_word_is_different_content(before: str, after: str) -> None:
+    for first, second in ((before, after), (after, before)):
+        observations = [obs(0.0, box(first)), obs(1.0, box(second))]
+        assert [t.text for t in merge_observations(observations, CFG, 1.0).texts] == [first, second]
+
+
+@pytest.mark.parametrize(
+    ("read", "misread"),
+    [
+        # 조건어가 알아볼 수 없게 읽힌 것은 잡음이다
+        ("만 65세 이상 어르신 무료 접종 대상입니다", "만 65세 이싱 어르신 무료 접종 대상입니다"),
+        # 조건어 하나가 깨진 것이지 다른 조건어로 바뀐 것이 아니다
+        ("접수 기간은 3월 2일부터 3월 9일까지입니다", "접수 기간은 3월 2일부터 3월 9일까자입니다"),
+        # 조건어는 같고 다른 글자만 잘못 읽혔다
+        ("만 65세 이상 어르신 무료 접종 대상입니다", "만 65세 이상 어로신 무료 접종 대상입니다"),
+    ],
+)
+def test_garbled_text_without_a_swapped_condition_word_is_still_jitter(
+    read: str, misread: str
+) -> None:
+    observations = [obs(0.0, box(read, 0.9)), obs(1.0, box(misread, 0.8))]
+    assert len(merge_observations(observations, CFG, 1.0).texts) == 1
+
+
 def test_a_gap_longer_than_tolerated_is_not_bridged_when_the_text_returns() -> None:
     # 허용 공백은 1샘플. 글자-빈-빈-글자(2샘플 공백)는 같은 구간으로 잇지 않는다.
     observations = [obs(0.0, box("안내 문구")), obs(1.0), obs(2.0), obs(3.0, box("안내 문구"))]
