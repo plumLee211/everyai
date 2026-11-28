@@ -44,7 +44,17 @@ else:
     datas += [(_models, "models")]
 
 hiddenimports = collect_submodules("easyocr") + collect_submodules("faster_whisper")
-binaries = collect_dynamic_libs("torchvision", search_patterns=["*.so", "*.dylib"])
+# torchvision의 C++ 확장은 import가 아니라 파일 경로로 로드돼 PyInstaller 분석에 잡히지 않는다.
+# Windows는 .pyd(+ 의존 .dll), macOS는 .so·.dylib이라 모두 모은다. 빠지면 실행 시
+# "operator torchvision::nms does not exist"가 난다.
+binaries = collect_dynamic_libs(
+    "torchvision", search_patterns=["*.pyd", "*.dll", "*.so", "*.dylib"]
+)
+if not any(
+    os.path.basename(_src).startswith("_C") and _src.endswith((".pyd", ".so"))
+    for _src, _ in binaries
+):
+    raise SystemExit("torchvision의 C++ 확장(_C*.pyd 또는 _C*.so)을 찾지 못했습니다.")
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
