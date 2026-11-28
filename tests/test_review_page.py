@@ -285,6 +285,24 @@ def test_export_writes_a_csv_with_a_sensible_default_name(env: Env, tmp_path: Pa
     assert env.dialogs.infos and "결과.csv" in env.dialogs.infos[0][1]
 
 
+def test_export_names_both_saved_files(env: Env, tmp_path: Path) -> None:
+    env.dialogs.csv = tmp_path / "결과.csv"
+    env.page.export_button.click()
+    [(_, text)] = env.dialogs.infos
+    assert "결과.csv" in text and "결과_분석상태.csv" in text
+
+
+def test_export_says_the_results_were_saved_when_only_the_state_file_failed(
+    env: Env, tmp_path: Path
+) -> None:
+    (tmp_path / "결과_분석상태.csv").mkdir()
+    env.dialogs.csv = tmp_path / "결과.csv"
+    env.page.export_button.click()
+    assert (tmp_path / "결과.csv").is_file() and env.dialogs.infos == []
+    [(title, text)] = env.dialogs.warnings
+    assert "분석 상태" in title and "검수 결과는 저장했습니다" in text
+
+
 def test_export_cancel_does_nothing(env: Env) -> None:
     env.dialogs.csv = None
     env.page.export_button.click()

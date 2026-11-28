@@ -14,6 +14,8 @@ from enum import StrEnum
 from pathlib import Path
 
 from barrierfree.models import (
+    NOTE_SOURCE_LABELS,
+    AnalysisNote,
     Issue,
     IssueSource,
     ReviewStatus,
@@ -21,7 +23,7 @@ from barrierfree.models import (
     SubtitleSource,
     Verdict,
 )
-from barrierfree.storage.export import export_csv
+from barrierfree.storage.export import export_csv, export_notes_csv, notes_csv_path
 from barrierfree.storage.repository import Repository, SessionRecord
 
 
@@ -79,6 +81,21 @@ def matches(issue: Issue, flt: IssueFilter) -> bool:
         and (flt.status is None or issue.review_status is flt.status)
         and (flt.verdict is None or issue.verdict is flt.verdict)
     )
+
+
+_UNCHECKED = "점검하지 못한 구간이 있습니다. 지적이 없다고 해서 확인된 것은 아닙니다."
+
+
+def _clock(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _note_line(note: AnalysisNote) -> str:
+    if note.start_s is None or note.end_s is None:
+        return note.message
+    source = NOTE_SOURCE_LABELS[note.source]
+    return f"[{source} 미점검 {_clock(note.start_s)}~{_clock(note.end_s)}] {note.message}"
 
 
 class ReviewState:
@@ -156,7 +173,12 @@ class ReviewState:
     # ----- 안내 -----
 
     def notices(self) -> list[str]:
-        notices = list(self._extra)
+        saved = self._repo.list_notes(self.session_id)
+        recorded = {n.message for n in saved}
+        notices = [_note_line(n) for n in saved]
+        notices += [text for text in self._extra if text not in recorded]
+        if any(n.start_s is not None for n in saved):
+            notices.insert(0, _UNCHECKED)
         joined = " ".join(notices)
         source = self.session.subtitle_source
         if source is SubtitleSource.NONE and "자막이 없는" not in joined:
@@ -189,3 +211,19 @@ class ReviewState:
             return export_csv(self._repo, self.session_id, path)
         except (OSError, sqlite3.Error) as exc:
             raise ExportError(_EXPORT_FAILED) from exc
+
+    def export_notes(self, results_path: str | Path) -> Path:
+        """지적 CSV를 저장한 뒤 분석 상태 파일을 저장한다."""
+        name = notes_csv_path(results_path).name
+        try:
+            return export_notes_csv(self._repo, self.session_id, results_path)
+        except FileExistsError as exc:
+            raise ExportError(
+                f"'{name}'이라는 다른 파일이 있어 덮어쓰지 않았습니다. "
+                "다른 이름으로 다시 내보내 주세요."
+            ) from exc
+        except (OSError, sqlite3.Error) as exc:
+            raise ExportError(
+                f"분석 상태 파일 '{name}'을 저장하지 못했습니다. "
+                "파일이 열려 있으면 닫고 다시 시도해 주세요."
+            ) from exc

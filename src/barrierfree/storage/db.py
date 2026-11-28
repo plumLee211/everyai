@@ -9,12 +9,13 @@ from __future__ import annotations
 import logging
 import shutil
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BACKUP_DIR_NAME = "db-backup"
 _FILE_SUFFIXES = ("-shm", "-wal", "")  # 지울 때를 위해 본 파일이 마지막이다
 
@@ -103,6 +104,30 @@ CREATE INDEX IF NOT EXISTS idx_metric_session_stage ON analysis_stage_metric(ses
 CREATE INDEX IF NOT EXISTS idx_cache_video_type ON analysis_cache(video_sha256, cache_type);
 
 PRAGMA user_version = 1;
+COMMIT;
+"""
+
+
+# 스키마 2: 분석 상태 안내와 미분석 구간. 기존 표는 바꾸지 않는다.
+_V2 = """
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS analysis_note (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id           TEXT NOT NULL REFERENCES analysis_session(id) ON DELETE CASCADE,
+    code                 TEXT NOT NULL,
+    source               TEXT NOT NULL CHECK (source IN ('MEDIA', 'STT', 'OCR', 'SUBTITLE')),
+    start_ms             INTEGER CHECK (start_ms IS NULL OR start_ms >= 0),
+    end_ms               INTEGER,
+    message              TEXT NOT NULL,
+    created_at           TEXT NOT NULL,
+    CHECK ((start_ms IS NULL) = (end_ms IS NULL)),
+    CHECK (end_ms IS NULL OR end_ms >= start_ms)
+);
+
+CREATE INDEX IF NOT EXISTS idx_note_session ON analysis_note(session_id, id);
+
+PRAGMA user_version = 2;
 COMMIT;
 """
 
@@ -254,6 +279,39 @@ def ensure_healthy(path: str | Path) -> HealthReport:
     return HealthReport(DatabaseHealth.RECREATED, backup)
 
 
+def needs_upgrade(conn: sqlite3.Connection) -> bool:
+    """이전 구조의 DB인가. 새 DB(0)는 해당하지 않는다."""
+    version: int = conn.execute("PRAGMA user_version").fetchone()[0]
+    return 0 < version < SCHEMA_VERSION
+
+
+def backup_before_upgrade(conn: sqlite3.Connection, path: str | Path) -> Path | None:
+    """이전 구조의 DB를 올리기 전에 사본을 만든다. 올린 DB는 이전 버전의 앱이 열지 못한다.
+
+    새 DB(0)이거나 이미 최신이면 아무것도 하지 않는다. 사본을 만들지 못하면 `OSError`를 올려
+    업그레이드를 막는다(원본은 그대로다).
+    """
+    if not needs_upgrade(conn):
+        return None
+    version: int = conn.execute("PRAGMA user_version").fetchone()[0]
+    source = Path(path)
+    root = source.parent / BACKUP_DIR_NAME
+    root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    folder = Path(tempfile.mkdtemp(prefix=f"{stamp}-v{version}-", dir=root))  # 이름이 겹치지 않게
+    try:
+        copy = sqlite3.connect(folder / source.name)
+        try:
+            conn.backup(copy)  # -wal에만 있는 내용까지 한 파일로 옮긴다
+        finally:
+            copy.close()
+    except (OSError, sqlite3.Error) as exc:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise OSError(f"업그레이드 전 DB 사본을 만들지 못했습니다: {exc}") from exc
+    logger.warning("DB 구조를 올리기 전에 사본을 만들었습니다: %s", folder)
+    return folder
+
+
 def migrate(conn: sqlite3.Connection) -> None:
     version: int = conn.execute("PRAGMA user_version").fetchone()[0]
     if version > SCHEMA_VERSION:
@@ -262,3 +320,5 @@ def migrate(conn: sqlite3.Connection) -> None:
         )
     if version < 1:
         conn.executescript(_V1)
+    if version < 2:
+        conn.executescript(_V2)

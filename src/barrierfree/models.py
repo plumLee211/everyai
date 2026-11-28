@@ -70,6 +70,50 @@ VERDICT_LABELS: dict[Verdict, str] = {
     Verdict.UNDETERMINED: "판단 불가",
 }
 
+class NoteSource(StrEnum):
+    MEDIA = "MEDIA"
+    STT = "STT"
+    OCR = "OCR"
+    SUBTITLE = "SUBTITLE"
+
+
+class NoteCode(StrEnum):
+    NO_AUDIO = "NO_AUDIO"
+    EMPTY_TRANSCRIPT = "EMPTY_TRANSCRIPT"
+    NO_SCREEN_TEXT = "NO_SCREEN_TEXT"
+    SUBTITLE_PARTIAL = "SUBTITLE_PARTIAL"  # 자막 파일의 일부를 읽지 못함
+    SUBTITLE_FROM_OCR = "SUBTITLE_FROM_OCR"
+    SUBTITLE_NONE = "SUBTITLE_NONE"  # 비교할 자막이 없어 음성↔자막 점검을 하지 않음
+
+
+NOTE_SOURCE_LABELS: dict[NoteSource, str] = {
+    NoteSource.MEDIA: "영상 파일",
+    NoteSource.STT: "음성 인식",
+    NoteSource.OCR: "화면 글자",
+    NoteSource.SUBTITLE: "자막",
+}
+
+
+@dataclass(frozen=True)
+class AnalysisNote:
+    """분석의 상태 안내. 구간(start_s, end_s)이 있으면 그 시간은 `source`로 점검하지 못했다.
+
+    구간이 없는 안내는 상태의 사실일 뿐이며 미분석 구간이 아니다.
+    """
+
+    code: NoteCode
+    source: NoteSource
+    message: str
+    start_s: float | None = None
+    end_s: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.start_s is None and self.end_s is None:
+            return
+        if self.start_s is None or self.end_s is None or not 0 <= self.start_s <= self.end_s:
+            raise ValueError("미분석 구간의 시작과 끝이 올바르지 않습니다.")
+
+
 ISSUE_KIND_LABELS: dict[IssueKind, str] = {
     IssueKind.VALUE_MISSING: "주요 정보 누락 의심",
     IssueKind.VALUE_MISMATCH: "주요 정보 불일치 의심",
