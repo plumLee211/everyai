@@ -30,6 +30,9 @@ Frame = NDArray[np.uint8]
 
 _PROBE_TIMEOUT_S = 30
 _AUDIO_TIMEOUT_S = 60 * 30
+# Windows의 GUI 앱(console=False)에서 콘솔 프로그램을 실행하면 검은 창이 새로 뜨고, 사용자가
+# 그 창을 닫으면 처리가 중단된다. 창 없이 실행한다. 이 플래그가 없는 OS에서는 0(아무 효과 없음)이다.
+_CREATION_FLAGS: int = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 class FfmpegError(Exception):
@@ -105,11 +108,19 @@ def _run(
     """명령을 실행한다. `cancel`이 있으면 취소되는 즉시 프로세스를 종료하고 CancelledError."""
     if cancel is None:
         try:
-            return subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+                creationflags=_CREATION_FLAGS,
+            )
         except subprocess.TimeoutExpired as exc:
             raise FfmpegError(f"{Path(cmd[0]).name} 실행 시간이 초과되었습니다.") from exc
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=_CREATION_FLAGS
+    )
     deadline = time.monotonic() + timeout
     while True:
         try:
@@ -423,7 +434,9 @@ def iter_frames(
     # stderr는 파이프 대신 임시 파일로 받는다. 파이프는 읽는 쪽이 없으면 버퍼가 차서
     # ffmpeg가 멈추고(stdout 읽기와 교착), 취소도 막힌다.
     with tempfile.TemporaryFile() as err_file:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err_file)
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=err_file, creationflags=_CREATION_FLAGS
+        )
         done = threading.Event()
         if cancel is not None:
             threading.Thread(
