@@ -66,6 +66,29 @@ def test_find_binary_ignores_the_shipped_folder_when_not_frozen(
     assert ff.find_binary("ffmpeg") == "/usr/bin/ffmpeg"
 
 
+def test_every_ffmpeg_process_is_started_without_a_console_window(
+    monkeypatch: pytest.MonkeyPatch, make_video: MakeVideo, tmp_path: Path
+) -> None:
+    video = make_video()
+    flags: list[object] = []
+    real_popen = subprocess.Popen
+
+    class RecordingPopen(real_popen):  # type: ignore[type-arg]
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            flags.append(kwargs.get("creationflags"))
+            super().__init__(*args, **kwargs)  # type: ignore[call-overload]
+
+    # subprocess.run도 내부에서 Popen을 쓰므로 세 실행 경로가 모두 여기를 지난다.
+    monkeypatch.setattr(ff.subprocess, "Popen", RecordingPopen)
+
+    info = ff.probe(video)  # run
+    ff.extract_audio(video, tmp_path / "a.wav", cancel=CancelToken())  # 취소 가능한 Popen
+    list(ff.iter_frames(video, fps=1.0, max_width=320, info=info))  # 프레임 스트림
+
+    assert len(flags) >= 3
+    assert all(value == getattr(subprocess, "CREATE_NO_WINDOW", 0) for value in flags)
+
+
 def test_probe_returns_stream_info(make_video: MakeVideo) -> None:
     info = ff.probe(make_video())
     assert info.duration_s == pytest.approx(2.0, abs=0.3)
