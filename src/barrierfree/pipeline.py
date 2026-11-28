@@ -34,6 +34,7 @@ from barrierfree.cancel import CancelledError, CancelToken
 from barrierfree.config import AnalysisConfig
 from barrierfree.dev_artifacts import DevArtifacts
 from barrierfree.engines.ocr import (
+    FRAME_SKIP_METHOD,
     Frame,
     OcrBox,
     OcrError,
@@ -506,7 +507,7 @@ class AnalysisPipeline:
         key = make_key(
             sha, CacheType.OCR, self._ocr.engine_name, self._ocr.model_name,
             {"mode": mode, "fps": fps, "max_width": cfg.ocr_max_width, "ratio": ratio,
-             "diff": cfg.frame_diff_skip_threshold},
+             "diff": cfg.frame_diff_skip_threshold, "skip": FRAME_SKIP_METHOD},
         )
 
         def report(share: float) -> None:
