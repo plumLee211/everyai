@@ -25,6 +25,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol, TypeVar
 
+from barrierfree.analysis.compare_rows import CompareData
+from barrierfree.analysis.duplicates import merge_screen_duplicates
 from barrierfree.analysis.screen_check import check_screen
 from barrierfree.analysis.screen_dependent import check_screen_dependent
 from barrierfree.analysis.speech_gaps import downgrade_in_gaps, suspected_gaps
@@ -76,6 +78,7 @@ from barrierfree.models import (
     SubtitleSource,
 )
 from barrierfree.storage.cache import CacheKey, CacheType, FileCache, hash_file, make_key
+from barrierfree.storage.compare_data import save_compare_data
 from barrierfree.storage.repository import Repository
 
 T = TypeVar("T")
@@ -469,7 +472,6 @@ class AnalysisPipeline:
 
         cues: list[SubtitleCue] = []
         source = SubtitleSource.FILE
-        rect: Rect | None = None
         if loaded is not None:
             cues = loaded.cues
             if loaded.skipped_blocks:
@@ -479,7 +481,7 @@ class AnalysisPipeline:
                     "해당 구간은 점검에서 빠집니다.",
                 ))
         else:
-            source, cues, rect, scan_hits = self._resolve_ocr_subtitles(
+            source, cues, scan_hits = self._resolve_ocr_subtitles(
                 session_id, path, info, sha, speech, cancel, notes
             )
             hits.extend(scan_hits)
@@ -503,12 +505,9 @@ class AnalysisPipeline:
         # 5. 화면 정보 비교 (M2, M2-2)
         started = time.perf_counter()
         self._emit(Stage.SCREEN_CHECK, "RUNNING", None, "화면 정보와 음성을 비교하는 중입니다.")
-        screen_texts, screen_uncertain = full.texts, full.uncertain
-        if source is SubtitleSource.OCR and rect is not None:
-            # 확인된 자막 영역의 글자는 자막으로 쓰였으므로 화면 글자 점검에서 뺀다.
-            screen_texts = split_by_region(screen_texts, rect)[1]
-            screen_uncertain = split_by_region(screen_uncertain, rect)[1]
-        m2 = check_screen(screen_texts, screen_uncertain, speech, cues, info.duration_s, cfg)
+        # 화면 글자는 위치나 자막과의 일치 때문에 빼지 않는다. 겹치는 지적은 합친다.
+        m2 = check_screen(full.texts, full.uncertain, speech, cues, info.duration_s, cfg)
+        m1, m2 = merge_screen_duplicates(m1, m2)
         m2_dependent = check_screen_dependent(speech, m2, cfg)
         self._measure(session_id, Stage.SCREEN_CHECK, started,
                       count=len(m2) + len(m2_dependent), unit="ISSUE")
@@ -520,6 +519,9 @@ class AnalysisPipeline:
         self._emit(Stage.RESULT_SAVE, "RUNNING", None, "결과를 정리하는 중입니다.")
         issues = sorted(m1 + m2 + m2_dependent, key=lambda i: (i.start_s, i.end_s))
         issues = downgrade_in_gaps(issues, gaps, cfg)
+        self._save_compare_data(
+            session_id, CompareData(speech, full.texts, full.uncertain, cues), notes
+        )
         repo.complete_session(session_id, issues, notes)
         try:
             self._measure(session_id, Stage.RESULT_SAVE, started, count=len(issues), unit="ISSUE")
@@ -527,6 +529,19 @@ class AnalysisPipeline:
             pass  # 측정은 부가 정보다. 이미 저장·완료된 분석을 실패로 뒤집지 않는다.
         self._emit(Stage.RESULT_SAVE, "DONE", 1.0, "분석을 마쳤습니다.")
         return PipelineResult(session_id, len(issues), source, [n.message for n in notes] + notices)
+
+    def _save_compare_data(
+        self, session_id: str, data: CompareData, notes: list[AnalysisNote]
+    ) -> None:
+        """대조 보기 자료. 저장하지 못해도 분석 결과는 남긴다."""
+        try:
+            save_compare_data(self._data_dir, session_id, data)
+        except OSError:
+            logger.exception("대조 자료를 저장하지 못했습니다")
+            notes.append(AnalysisNote(
+                NoteCode.COMPARE_DATA_FAILED, NoteSource.MEDIA,
+                "대조 보기 자료를 저장하지 못했습니다. 지적 목록에는 영향이 없습니다.",
+            ))
 
     # ----- 받아쓰기 누락 -----
 
@@ -617,7 +632,7 @@ class AnalysisPipeline:
         speech: list[SpeechSegment],
         cancel: CancelToken,
         notes: list[AnalysisNote],
-    ) -> tuple[SubtitleSource, list[SubtitleCue], Rect | None, list[bool]]:
+    ) -> tuple[SubtitleSource, list[SubtitleCue], list[bool]]:
         """자막 파일이 없을 때: 하단을 스캔하고 편집자가 영역을 확인하면 OCR 자막을 만든다."""
         cfg, repo = self._config, self._repo
         ratio = cfg.subtitle_region_ratio
@@ -644,7 +659,7 @@ class AnalysisPipeline:
                 "자막이 없는 영상입니다. 음성별 자막 누락은 개별로 표시하지 않습니다.",
                 0.0, info.duration_s,
             ))
-            return SubtitleSource.NONE, [], None, hits
+            return SubtitleSource.NONE, [], hits
 
         rect = decision.rect or estimate.rect
         new_ratio = round(1.0 - rect[1], 4)
@@ -664,7 +679,7 @@ class AnalysisPipeline:
                 "확인한 자막 영역에서 글자를 찾지 못해 자막이 없는 것으로 처리했습니다.",
                 0.0, info.duration_s,
             ))
-            return SubtitleSource.NONE, [], None, hits
+            return SubtitleSource.NONE, [], hits
 
         relative = f"artifacts/subtitles/{session_id}.srt"
         write_srt(cues, self._data_dir / relative)
@@ -678,4 +693,4 @@ class AnalysisPipeline:
             NoteCode.SUBTITLE_FROM_OCR, NoteSource.SUBTITLE,
             "OCR로 추출한 자막으로 점검합니다. 이 모드의 결과는 모두 검수가 필요합니다.",
         ))
-        return SubtitleSource.OCR, cues, rect, hits
+        return SubtitleSource.OCR, cues, hits

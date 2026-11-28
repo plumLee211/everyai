@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from barrierfree.analysis.compare_rows import CompareData
 from barrierfree.models import (
     NOTE_SOURCE_LABELS,
     AnalysisNote,
@@ -24,6 +25,7 @@ from barrierfree.models import (
     SubtitleSource,
     Verdict,
 )
+from barrierfree.storage.compare_data import load_compare_data
 from barrierfree.storage.export import export_csv, export_notes_csv, notes_csv_path
 from barrierfree.storage.repository import Repository, SessionRecord
 
@@ -122,10 +124,16 @@ def _note_line(note: AnalysisNote) -> str:
 
 class ReviewState:
     def __init__(
-        self, repo: Repository, session_id: str, *, extra_notices: list[str] | None = None
+        self,
+        repo: Repository,
+        session_id: str,
+        *,
+        extra_notices: list[str] | None = None,
+        data_dir: str | Path | None = None,
     ) -> None:
         self._repo = repo
         self.session_id = session_id
+        self._data_dir = data_dir
         self._extra = list(extra_notices or [])
         self._issues = sorted(
             repo.list_issues(session_id), key=lambda i: (i.start_s, i.end_s, i.id)
@@ -174,6 +182,15 @@ class ReviewState:
             dismissed=by_status[ReviewStatus.DISMISSED],
             by_verdict=by_verdict,
         )
+
+    def notes(self) -> list[AnalysisNote]:
+        return self._repo.list_notes(self.session_id)
+
+    def compare_data(self) -> CompareData | None:
+        """대조 보기 자료. 없거나 읽을 수 없으면 None."""
+        if self._data_dir is None:
+            return None
+        return load_compare_data(self._data_dir, self.session_id)
 
     # ----- 검수 -----
 
