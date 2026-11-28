@@ -173,30 +173,54 @@ def _make_weekday(m: re.Match[str]) -> Entity | None:
     return Entity(EntityKind.WEEKDAY, m.group(1), m.group(0))
 
 
-# 금액은 '숫자+단위들' 조각의 나열이다("1억 5천만원" = 1억 + 5천만). 앞쪽 조각은 반드시 단위가
-# 붙어야 한다. 단위가 선택이면 같은 숫자열을 나누는 방법이 지수적으로 늘어 정규식이 멈춘다.
-_MONEY_RE = re.compile(
-    r"(?<![\d.])((?:\d+(?:\.\d+)?\s*[억만천백]{1,3}\s*)*\d+(?:\.\d+)?\s*[억만천백]{0,3})\s*원"
-    + UNIT_END
-)
-_MONEY_UNITS = {"억": 10**8, "만": 10**4, "천": 10**3, "백": 10**2}
+# 숫자와 자리 이름이 섞인 수('1억 5천만', '2천200', '3만')는 금액·인원·수치가 같이 쓴다.
+# '숫자+자리 이름' 조각의 나열이며, 앞쪽 조각은 반드시 자리 이름이 붙어야 한다. 선택이면 같은
+# 숫자열을 나누는 방법이 지수적으로 늘어 정규식이 멈춘다.
+_MIXED_NUMBER = r"(?:\d+(?:\.\d+)?\s*[억만천백]{1,3}\s*)*\d+(?:\.\d+)?\s*[억만천백]{0,3}"
+_SMALL_PLACES = {"천": 10**3, "백": 10**2}
+# 정규화는 문장부호를 지운다. 그대로 두면 '3만, 200명'이나 '3만~5만'이 한 수로 이어지므로,
+# 자리 이름과 다음 숫자 사이의 부호는 지우기 전에 낱말로 바꿔 끊는다. '5,000'의 쉼표는 해당 없다.
+_NUMBER_BREAK_RE = re.compile(r"(?<=[억만천백])\s*[^\w\s%]+\s*(?=\d)")
+
+
+def _mixed_number(text: str) -> Decimal:
+    """'2천200만' -> 22,000,000.
+
+    천·백은 바로 앞의 수에만 곱한다. 만은 억 아래에 쌓인 수 전체에, 억은 그때까지의 수 전체에
+    곱한다: (2천 + 200) x 만. 조각마다 따로 곱해 더하면 2,002,000이 된다.
+    """
+    over_eok = over_man = section = Decimal(0)
+    for piece in re.finditer(r"(\d+(?:\.\d+)?)\s*([억만천백]*)", text):
+        pending: Decimal | None = Decimal(piece.group(1))  # 아직 자리 이름을 만나지 않은 수
+        for place in piece.group(2):
+            if place in _SMALL_PLACES:
+                section += (Decimal(1) if pending is None else pending) * _SMALL_PLACES[place]
+            elif place == "만":
+                over_man += (section + (pending or 0)) * 10**4
+                section = Decimal(0)
+            else:  # 억
+                over_eok += (over_man + section + (pending or 0)) * 10**8
+                over_man = section = Decimal(0)
+            pending = None
+        section += pending or 0
+    return over_eok + over_man + section
+
+
+_MONEY_RE = re.compile(rf"(?<![\d.])({_MIXED_NUMBER})\s*원" + UNIT_END)
 
 
 def _make_money(m: re.Match[str]) -> Entity | None:
-    total = Decimal(0)
-    for piece in re.finditer(r"(\d+(?:\.\d+)?)\s*([억만천백]*)", m.group(1)):
-        amount = Decimal(piece.group(1))
-        for unit in piece.group(2):  # '5천만' = 5 x 천 x 만
-            amount *= _MONEY_UNITS[unit]
-        total += amount
-    return Entity(EntityKind.MONEY, str(int(total)), m.group(0).strip())
+    return Entity(EntityKind.MONEY, str(int(_mixed_number(m.group(1)))), m.group(0).strip())
 
 
-_HEADCOUNT_RE = re.compile(r"(?<![\d.])(\d+)\s*명" + UNIT_END)
+_HEADCOUNT_RE = re.compile(rf"(?<![\d.])({_MIXED_NUMBER})\s*명" + UNIT_END)
 
 
 def _make_headcount(m: re.Match[str]) -> Entity | None:
-    return Entity(EntityKind.HEADCOUNT, str(int(m.group(1))), m.group(0))
+    number = _mixed_number(m.group(1))
+    if number != number.to_integral_value():  # '3.5명'은 인원으로 읽지 않는다
+        return None
+    return Entity(EntityKind.HEADCOUNT, str(int(number)), m.group(0))
 
 
 _ADDRESS_RE = re.compile(
@@ -243,14 +267,13 @@ def _make_room(m: re.Match[str]) -> Entity | None:
 
 
 _QUANTITY_RE = re.compile(
-    r"(?<![\d.])(\d+(?:\.\d+)?)\s*"
+    rf"(?<![\d.])({_MIXED_NUMBER})\s*"
     r"(%|일간|일(?=\s*동안)|시간|배|건|개|회|번|세|대|분(?!의)|초|주)" + UNIT_END
 )
 
 
-def _canonical_number(text: str) -> str:
+def _canonical_number(number: Decimal) -> str:
     """3.0 -> 3, 03 -> 3, 3.50 -> 3.5. 표기만 다른 같은 수가 불일치로 판정되지 않게 한다."""
-    number = Decimal(text)
     if number == number.to_integral_value():
         return str(int(number))
     return format(number.normalize(), "f")
@@ -258,7 +281,8 @@ def _canonical_number(text: str) -> str:
 
 def _make_quantity(m: re.Match[str]) -> Entity | None:
     unit = "일간" if m.group(2) == "일" else m.group(2)  # '30일 동안' = '30일간'
-    return Entity(EntityKind.QUANTITY, _canonical_number(m.group(1)) + unit, m.group(0))
+    value = _canonical_number(_mixed_number(m.group(1))) + unit
+    return Entity(EntityKind.QUANTITY, value, m.group(0))
 
 
 _NORMALIZED_STAGE: list[tuple[re.Pattern[str], Maker]] = [
@@ -304,7 +328,7 @@ def extract_entities(text: str, *, lenient_dates: bool = False) -> list[Entity]:
     s = _consume(s, _SHORT_PHONE_RE, _make_short_phone, found)
     s = _consume(s, TIME_RE, _make_time, found)
     s = _consume(s, _COLON_TIME_RE, _make_colon_time, found)
-    t = normalize_text(s, keep_spaces=True)
+    t = normalize_text(_NUMBER_BREAK_RE.sub(" 및 ", s), keep_spaces=True)
     for pattern, make in _NORMALIZED_STAGE:
         t = _consume(t, pattern, make, found)
     return found
