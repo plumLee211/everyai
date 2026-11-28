@@ -49,6 +49,24 @@ def _default_factory(model_name: str, **kwargs: Any) -> Any:
     return WhisperModel(model_name, **kwargs)
 
 
+def _cached_model_path(model_name: str, model_dir: str | None) -> str:
+    """Use a packaged HF snapshot directly so an included model needs no network lookup."""
+    if model_dir is None or "/" in model_name or "\\" in model_name:
+        return model_name
+
+    repo = Path(model_dir) / f"models--Systran--faster-whisper-{model_name}"
+    ref = repo / "refs" / "main"
+    if ref.is_file():
+        snapshot = repo / "snapshots" / ref.read_text(encoding="utf-8").strip()
+        if (snapshot / "model.bin").is_file():
+            return str(snapshot)
+
+    snapshots = sorted((repo / "snapshots").glob("*/model.bin"))
+    if snapshots:
+        return str(snapshots[0].parent)
+    return model_name
+
+
 class FasterWhisperEngine:
     engine_name = "faster-whisper"
 
@@ -71,7 +89,7 @@ class FasterWhisperEngine:
 
     def _create_model(self) -> Any:
         return self._factory(
-            self.model_name,
+            _cached_model_path(self.model_name, self._model_dir),
             device=self.device,
             compute_type=self.compute_type,
             download_root=self._model_dir,

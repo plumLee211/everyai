@@ -6,7 +6,7 @@
 import os
 import sys
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # 저장소 루트
 
@@ -19,9 +19,11 @@ datas += collect_data_files("easyocr")           # 문자 사전 등
 datas += collect_data_files("faster_whisper")     # VAD(silero) 모델 파일
 
 # ffmpeg/ffprobe는 사전에 저장소 루트의 ffmpeg/ 폴더에 둔다(Windows: .exe, macOS: 확장자 없음).
+# 별도 바이너리 폴더는 BARRIERFREE_FFMPEG_DIR로 지정할 수 있다.
 _exe_suffix = ".exe" if IS_WINDOWS else ""
+_ffmpeg_dir = os.environ.get("BARRIERFREE_FFMPEG_DIR", os.path.join(ROOT, "ffmpeg"))
 for _name in ("ffmpeg", "ffprobe"):
-    _path = os.path.join(ROOT, "ffmpeg", _name + _exe_suffix)
+    _path = os.path.join(_ffmpeg_dir, _name + _exe_suffix)
     if not os.path.isfile(_path):
         raise SystemExit(f"{_path} 가 없습니다. build/README.md의 '준비'를 먼저 따라 주세요.")
     datas += [(_path, "ffmpeg")]
@@ -42,10 +44,12 @@ else:
     datas += [(_models, "models")]
 
 hiddenimports = collect_submodules("easyocr") + collect_submodules("faster_whisper")
+binaries = collect_dynamic_libs("torchvision", search_patterns=["*.so", "*.dylib"])
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[os.path.join(ROOT, "src")],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     excludes=["tests", "pytest", "mypy", "ruff"],

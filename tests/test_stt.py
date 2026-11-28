@@ -107,6 +107,33 @@ def test_model_is_loaded_lazily_once_with_requested_settings(tmp_path: Path) -> 
     }
 
 
+def test_bundled_huggingface_snapshot_is_loaded_directly_without_repo_lookup(
+    tmp_path: Path,
+) -> None:
+    model = FakeModel([])
+    snapshot = (
+        tmp_path
+        / "models--Systran--faster-whisper-small"
+        / "snapshots"
+        / "abc123"
+    )
+    snapshot.mkdir(parents=True)
+    (snapshot / "model.bin").touch()
+    refs = snapshot.parent.parent / "refs"
+    refs.mkdir()
+    (refs / "main").write_text("abc123\n", encoding="utf-8")
+    engine, created = _engine(model, model_dir=str(tmp_path))
+
+    engine.prepare()
+
+    assert created[0] == {
+        "name": str(snapshot),
+        "device": "cpu",
+        "compute_type": "int8",
+        "download_root": str(tmp_path),
+    }
+
+
 def test_model_load_failure_is_reported_as_model_error(tmp_path: Path) -> None:
     def factory(name: str, **kwargs: Any) -> FakeModel:
         raise OSError("download failed")
