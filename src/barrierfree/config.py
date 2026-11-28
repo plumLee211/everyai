@@ -20,6 +20,9 @@ class AnalysisConfig:
     min_speech_chars: int = 3
     no_speech_prob_max: float = 0.6
     stt_avg_logprob_min: float = -1.0  # 이보다 낮으면 '판단 불가: 음성 확인 필요'
+    # 받아쓰기 누락 의심(누락이 확인된 영상 한 편에서 고른 값. 검증하지 않았다)
+    stt_gap_min_s: float = 3.0  # 받아쓰기가 덮지 않는 말소리가 이만큼 이어지면 의심
+    stt_sparse_chars_per_s: float = 2.0  # 말소리 1초당 글자가 이보다 적으면 의심
 
     # --- M1 ---
     candidate_window_s: float = 2.0

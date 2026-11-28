@@ -18,6 +18,7 @@ from barrierfree.models import (
     AnalysisNote,
     Issue,
     IssueSource,
+    NoteCode,
     ReviewStatus,
     SessionStatus,
     SubtitleSource,
@@ -84,6 +85,9 @@ def matches(issue: Issue, flt: IssueFilter) -> bool:
 
 
 _UNCHECKED = "점검하지 못한 구간이 있습니다. 지적이 없다고 해서 확인된 것은 아닙니다."
+_MAYBE_UNCHECKED = (
+    "음성을 인식하지 못했을 수 있는 구간이 있습니다. 지적이 없다고 해서 확인된 것은 아닙니다."
+)
 
 
 def _clock(seconds: float) -> str:
@@ -91,11 +95,29 @@ def _clock(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+def _range(note: AnalysisNote) -> str:
+    assert note.start_s is not None and note.end_s is not None
+    return f"{_clock(note.start_s)}~{_clock(note.end_s)}"
+
+
+def _note_lines(notes: list[AnalysisNote]) -> list[str]:
+    """안내 한 건에 한 줄. 누락 의심 구간은 여러 개여도 한 줄에 모은다(문제 목록을 가리지 않게)."""
+    suspected = [n for n in notes if n.code is NoteCode.SPEECH_MAYBE_MISSED]
+    lines: list[str] = []
+    for note in notes:
+        if note.code is not NoteCode.SPEECH_MAYBE_MISSED:
+            lines.append(_note_line(note))
+        elif note is suspected[0]:
+            ranges = ", ".join(_range(n) for n in suspected)
+            lines.append(f"[음성 인식 누락 의심 {ranges}] {note.message}")
+    return lines
+
+
 def _note_line(note: AnalysisNote) -> str:
     if note.start_s is None or note.end_s is None:
         return note.message
     source = NOTE_SOURCE_LABELS[note.source]
-    return f"[{source} 미점검 {_clock(note.start_s)}~{_clock(note.end_s)}] {note.message}"
+    return f"[{source} 미점검 {_range(note)}] {note.message}"
 
 
 class ReviewState:
@@ -175,10 +197,13 @@ class ReviewState:
     def notices(self) -> list[str]:
         saved = self._repo.list_notes(self.session_id)
         recorded = {n.message for n in saved}
-        notices = [_note_line(n) for n in saved]
+        notices = _note_lines(saved)
         notices += [text for text in self._extra if text not in recorded]
-        if any(n.start_s is not None for n in saved):
+        suspected = [n for n in saved if n.code is NoteCode.SPEECH_MAYBE_MISSED]
+        if any(n.start_s is not None and n not in suspected for n in saved):
             notices.insert(0, _UNCHECKED)
+        elif suspected:
+            notices.insert(0, _MAYBE_UNCHECKED)
         joined = " ".join(notices)
         source = self.session.subtitle_source
         if source is SubtitleSource.NONE and "자막이 없는" not in joined:

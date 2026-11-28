@@ -156,6 +156,7 @@ def build(
     events: list[StageEvent] | None = None,
     config: AnalysisConfig | None = None,
     dev: DevArtifacts | None = None,
+    detector: Any = None,
 ) -> AnalysisPipeline:
     return AnalysisPipeline(
         repo=env.repo,
@@ -168,6 +169,7 @@ def build(
         on_progress=events.append if events is not None else None,
         frame_source=scenes,
         dev_artifacts=dev,
+        speech_detector=detector or (lambda _audio: []),
     )
 
 

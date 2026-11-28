@@ -27,6 +27,7 @@ from typing import Protocol, TypeVar
 
 from barrierfree.analysis.screen_check import check_screen
 from barrierfree.analysis.screen_dependent import check_screen_dependent
+from barrierfree.analysis.speech_gaps import downgrade_in_gaps, suspected_gaps
 from barrierfree.analysis.subtitle_check import check_subtitles
 from barrierfree.analysis.subtitle_extract import extract_cues, split_by_region
 from barrierfree.analysis.subtitle_region import Rect, RegionEstimate, estimate_subtitle_region
@@ -51,6 +52,7 @@ from barrierfree.engines.stt import (
     segments_from_payload,
     segments_to_payload,
 )
+from barrierfree.engines.vad import detect_speech
 from barrierfree.media.ffmpeg import (
     FfmpegError,
     UnsupportedVideoError,
@@ -155,6 +157,7 @@ class PipelineOcr(Protocol):
 
 
 FrameSource = Callable[..., Iterator[tuple[float, Frame]]]
+SpeechDetector = Callable[[Path], list[tuple[float, float]]]
 ConfirmRegion = Callable[[RegionEstimate], RegionDecision]
 Progress = Callable[[StageEvent], None]
 
@@ -247,6 +250,7 @@ class AnalysisPipeline:
         on_progress: Progress | None = None,
         frame_source: FrameSource | None = None,
         dev_artifacts: DevArtifacts | None = None,
+        speech_detector: SpeechDetector | None = None,
     ) -> None:
         self._repo = repo
         self._cache = cache
@@ -259,6 +263,7 @@ class AnalysisPipeline:
         self._confirm = confirm_region
         self._progress = on_progress
         self._frames = frame_source or _default_frame_source
+        self._detect_speech = speech_detector or detect_speech
         self._stage: Stage | None = None
         self._ocr_fraction = 0.0
 
@@ -434,6 +439,9 @@ class AnalysisPipeline:
                 NoteCode.NO_AUDIO, NoteSource.STT,
                 "영상에 오디오 트랙이 없어 음성 인식을 건너뛰었습니다.",
             ))
+        gaps: list[tuple[float, float]] = []
+        if audio is not None and speech:  # 받아쓰기가 통째로 비면 위에서 영상 전체를 알렸다
+            gaps = self._speech_gaps(audio, speech, info.duration_s, cancel, notes)
         self._measure(session_id, Stage.STT, started, cache_hit=stt_hit, count=len(speech),
                       unit="SEGMENT")
         self._emit(Stage.STT, "DONE", 1.0, "음성 인식을 마쳤습니다.")
@@ -511,6 +519,7 @@ class AnalysisPipeline:
         started = time.perf_counter()
         self._emit(Stage.RESULT_SAVE, "RUNNING", None, "결과를 정리하는 중입니다.")
         issues = sorted(m1 + m2 + m2_dependent, key=lambda i: (i.start_s, i.end_s))
+        issues = downgrade_in_gaps(issues, gaps, cfg)
         repo.complete_session(session_id, issues, notes)
         try:
             self._measure(session_id, Stage.RESULT_SAVE, started, count=len(issues), unit="ISSUE")
@@ -518,6 +527,44 @@ class AnalysisPipeline:
             pass  # 측정은 부가 정보다. 이미 저장·완료된 분석을 실패로 뒤집지 않는다.
         self._emit(Stage.RESULT_SAVE, "DONE", 1.0, "분석을 마쳤습니다.")
         return PipelineResult(session_id, len(issues), source, [n.message for n in notes] + notices)
+
+    # ----- 받아쓰기 누락 -----
+
+    def _speech_gaps(
+        self,
+        audio: Path,
+        speech: list[SpeechSegment],
+        duration_s: float,
+        cancel: CancelToken,
+        notes: list[AnalysisNote],
+    ) -> list[tuple[float, float]]:
+        """누락이 의심되는 구간을 안내에 남기고 돌려준다. 확인에 실패해도 분석은 계속한다."""
+        cancel.raise_if_cancelled()
+        try:
+            spoken = self._detect_speech(audio)
+            gaps = [
+                (start, min(end, duration_s))
+                for start, end in suspected_gaps(spoken, speech, self._config)
+                if start < min(end, duration_s)
+            ]
+        except CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - 부가 확인이다
+            logger.exception("받아쓰기 누락 확인에 실패했습니다")
+            notes.append(AnalysisNote(
+                NoteCode.SPEECH_CHECK_FAILED, NoteSource.STT,
+                "받아쓰기가 말소리를 놓쳤는지 확인하지 못했습니다.",
+            ))
+            return []
+        notes += [
+            AnalysisNote(
+                NoteCode.SPEECH_MAYBE_MISSED, NoteSource.STT,
+                "말소리가 있는데 받아쓴 글자가 없거나 매우 적습니다. 인식하지 못했을 수 있습니다.",
+                start, end,
+            )
+            for start, end in gaps
+        ]
+        return gaps
 
     # ----- OCR -----
 

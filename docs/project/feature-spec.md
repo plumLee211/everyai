@@ -195,6 +195,7 @@
   - **CUDA 폴백**: 오류 메시지에 `cuda`, `cublas`, `cudnn`, `cudart` 중 하나가 있으면(대소문자 무시) CUDA 오류로 본다. 모델 로드 중이면 device가 cuda일 때 CPU·`int8`로 바꿔 한 번 더 로드한다. 전사 중이면 취소 상태가 아니고 device가 cuda일 때 CPU로 바꿔 처음부터 한 번 더 전사한다. 폴백하면 `fell_back_to_cpu=True`로 표시한다.
   - 사용할 모델·장치는 SET-02, SET-01이 정한다.
   - **캐시 직렬화**: 구간 목록을 JSON 호환 dict로 저장·복원한다. 복원 시 형식 오류, 시각이 유한수가 아님, `start<0` 또는 `end<start`, text가 문자열이 아님, `no_speech_prob`가 0~1을 벗어나면 `ValueError`로 거부한다(ANL-11).
+  - **받아쓰기 누락 의심**(`analysis/speech_gaps.py`, `engines/vad.py`): 받아쓰기 결과가 있으면 같은 오디오에 말소리 탐지(Silero VAD, 기본값)를 따로 실행한다. 받아쓰기 설정과 결과는 바꾸지 않는다. ① 받아쓰기 구간이 덮지 않는 말소리가 `stt_gap_min_s=3.0`초 이상이거나, ② 말소리가 그 이상 들어 있는 구간의 글자가 말소리 1초당 `stt_sparse_chars_per_s=2.0`자 미만이면 의심 구간(`SPEECH_MAYBE_MISSED`)으로 안내한다. 확인에 실패하면 구간 없는 안내만 남기고 분석을 계속한다. 의심 구간은 확인된 누락이 아니며, 여기서 걸리지 않는 누락도 있다.
 - **출력**: `list[SpeechSegment(start_s, end_s, text, avg_logprob, no_speech_prob)]`
 - **예외·실패 처리**: 오디오 파일이 없으면 `SttError`, 모델 로드 실패는 `SttModelError`("음성 인식 모델을 불러올 수 없습니다"), 전사 실패는 `SttError`("음성 인식에 실패했습니다"). 취소 상태에서 난 예외는 변환하지 않고 그대로 올린다. 오류 코드는 모델 오류 ERR-06, 인식 오류 ERR-07이다.
 - **구현 위치**: `engines/stt.py`(`FasterWhisperEngine.transcribe`, `prepare`, `segments_to_payload`, `segments_from_payload`), `pipeline.py`(`_analyze`)
@@ -325,8 +326,9 @@
 - **입력**: M1, M2, M2-2 지적 목록
 - **동작 규칙**
   - 세 목록을 합쳐 (시작, 끝) 순으로 정렬한다.
+  - **누락 의심 구간의 판정 낮추기**: 의심 구간과 겹치는 M1 지적, 표시 구간 ±`screen_near_window_s` 안에 의심 구간이 있는 M2의 `SCREEN_ONLY_INFO`·`SCREEN_VALUE_MISMATCH`·`MENTIONED_ELSEWHERE`는 `STT_UNCERTAIN` / `UNDETERMINED`로 바꾸고 `evidence`에 `downgraded_from`, `original_reason`, `speech_maybe_missed`를 남긴다. 지적은 지우지 않는다.
   - `complete_session`이 **한 트랜잭션**에서 지적과 분석 상태 안내를 모두 INSERT하고 세션 상태를 COMPLETED, 종료 시각을 기록한다.
-  - **분석 상태 안내**(`AnalysisNote`: 코드, 대상 소스, 문구, 선택 구간): 구간이 있으면 그 시간은 해당 소스로 점검하지 못한 것이다. 구간이 있는 것은 오디오 트랙 없음·받아쓰기 결과 없음(음성 인식, 영상 전체), 비교할 자막 없음(자막, 영상 전체)이다. 화면 글자를 하나도 읽지 못한 경우, 자막 파일 일부를 읽지 못한 경우, OCR 자막 사용은 구간 없는 안내다. 받아쓰기 일부의 누락은 아직 알리지 않는다.
+  - **분석 상태 안내**(`AnalysisNote`: 코드, 대상 소스, 문구, 선택 구간): 구간이 있으면 그 시간은 해당 소스로 점검하지 못한 것이다. 구간이 있는 것은 오디오 트랙 없음·받아쓰기 결과 없음(음성 인식, 영상 전체), 비교할 자막 없음(자막, 영상 전체)이다. 화면 글자를 하나도 읽지 못한 경우, 자막 파일 일부를 읽지 못한 경우, OCR 자막 사용은 구간 없는 안내다. 받아쓰기 누락 의심 구간은 "미점검"이 아니라 "누락 의심"으로 한 줄에 모아 보인다.
   - 취소되거나 실패한 세션에는 지적이 남지 않는다(검수 화면에 부분 결과가 노출되지 않음).
   - 저장 뒤 단계 측정(ANL-14) 기록이 실패해도 이미 완료된 분석을 실패로 뒤집지 않는다.
 - **출력**: `PipelineResult`(지적 수 포함)
@@ -807,7 +809,7 @@
 | M1 | `VALUE_MISMATCH` | 주요 정보 불일치 의심 | ANL-07 |
 | M1 | `SUBTITLE_MISSING` | 자막 누락 의심 | ANL-07 |
 | M1 | `EXPRESSION_DIFFERENCE` | 표현 차이 | ANL-07 |
-| M1 | `STT_UNCERTAIN` | 음성 확인 필요 | ANL-07, ANL-08(강등) |
+| M1 | `STT_UNCERTAIN` | 음성 확인 필요 | ANL-07, ANL-08(강등), ANL-10(누락 의심) |
 | M2 | `SCREEN_ONLY_INFO` | 화면 정보 누락 의심 | ANL-08 |
 | M2 | `SCREEN_VALUE_MISMATCH` | 화면 값 확인 필요 | ANL-08 |
 | M2 | `NO_SPEECH_TO_COMPARE` | 비교할 음성 없음 | ANL-08 |
@@ -846,6 +848,7 @@
 | 입력 | `max_video_seconds = 1200`, `video_extensions = (.mp4, .mov, .mkv, .avi, .wmv)` | REG-01 |
 | 모델 | `whisper_model = "small"`, `whisper_compute_type_cpu = "int8"`, `model_dir = None` | ANL-03, SET-02 |
 | STT 신뢰도 | `min_speech_chars = 3`, `no_speech_prob_max = 0.6`, `stt_avg_logprob_min = -1.0` | ANL-07, ANL-09 |
+| 받아쓰기 누락 의심 | `stt_gap_min_s = 3.0`, `stt_sparse_chars_per_s = 2.0` | ANL-03 |
 | 자막 비교(M1) | `candidate_window_s = 2.0`, `candidate_window_wide_s = 6.0`, `expression_similarity_min = 0.5` | ANL-07 |
 | OCR | `ocr_confidence_min = 0.5`, `ocr_max_width = 1280`, `screen_ocr_fps = 1.0`, `subtitle_ocr_fps = 2.0`, `frame_diff_skip_threshold = 0.02`, `ocr_max_gap_samples = 1`, `ocr_min_text_chars = 2` | ANL-04, ANL-05 |
 | 화면 정보 비교(M2) | `screen_merge_similarity = 0.85`, `screen_near_window_s = 5.0`, `always_visible_ratio = 0.7` | ANL-04, ANL-08 |
