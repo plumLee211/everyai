@@ -292,13 +292,14 @@
 
     | 순위 | 조건 | 종류 / 판정 |
     |---|---|---|
-    | 1 | MISMATCH가 하나라도 있음 | `SCREEN_VALUE_MISMATCH` / `ERROR` |
-    | 2 | ONLY가 하나라도 있음 | `SCREEN_ONLY_INFO` / `ERROR` |
+    | 1 | MISMATCH가 하나라도 있음 | `SCREEN_VALUE_MISMATCH` / `REVIEW_REQUIRED` |
+    | 2 | ONLY가 하나라도 있음 | `SCREEN_ONLY_INFO` / `REVIEW_REQUIRED` |
     | 3 | ELSEWHERE만 있음 | `MENTIONED_ELSEWHERE` / `REVIEW_REQUIRED` |
 
     ELSEWHERE 항목이 하나라도 있으면 위 종류와 관계없이 `evidence.gap_s`에 가장 짧은 시간 간격을 기록한다.
 
-  - **강등**: 판정이 `ERROR`이고 근처 음성 중 하나라도 `avg_logprob < -1.0`이면 `STT_UNCERTAIN` / `UNDETERMINED`로 바꾼다.
+  - **M2는 `ERROR`를 내지 않는다**: 값의 종류만 비교하므로 화면의 값과 근처에서 말한 값이 같은 대상인지 알 수 없다. MISMATCH의 사유는 "다릅니다"라고 단정하지 않고, 화면 값을 음성에서 확인하지 못했다는 것과 가까이서 말한 같은 종류의 값을 함께 보여 준다. 음성에 없는 화면 정보의 중요도도 판단하지 않는다(실증용 임시 규칙, `work-plan.md` 4.2). 이전에 저장한 분석의 판정과 사유는 바뀌지 않는다.
+  - **강등**: 종류가 `SCREEN_VALUE_MISMATCH`나 `SCREEN_ONLY_INFO`이고 근처 음성 중 하나라도 `avg_logprob < -1.0`이면 `STT_UNCERTAIN` / `UNDETERMINED`로 바꾼다.
   - **저신뢰 OCR**: `uncertain` 목록의 글자는 핵심 정보가 있고, 신뢰도가 유한수이고, 그 값 중 하나라도 전체 음성에 없을 때만 `OCR_UNCERTAIN` / `UNDETERMINED`로 올린다. 이 글자들은 자막 일치 제외와 상시 표시 판정을 거치지 않는다.
 - **출력**: `list[Issue]`(source=`M2`, 시간순)
 - **예외·실패 처리**: 판정 규칙 안에서 발생시키는 예외는 없다.
@@ -805,7 +806,7 @@
 | M1 | `EXPRESSION_DIFFERENCE` | 표현 차이 | ANL-07 |
 | M1 | `STT_UNCERTAIN` | 음성 확인 필요 | ANL-07, ANL-08(강등) |
 | M2 | `SCREEN_ONLY_INFO` | 화면 정보 누락 의심 | ANL-08 |
-| M2 | `SCREEN_VALUE_MISMATCH` | 화면 정보 불일치 의심 | ANL-08 |
+| M2 | `SCREEN_VALUE_MISMATCH` | 화면 값 확인 필요 | ANL-08 |
 | M2 | `MENTIONED_ELSEWHERE` | 전달 시점 확인 필요 | ANL-08 |
 | M2 | `ALWAYS_ON_SCREEN` | 영상 내내 표시되는 정보 | ANL-08 |
 | M2 | `OCR_UNCERTAIN` | 화면 확인 필요 | ANL-08 |
