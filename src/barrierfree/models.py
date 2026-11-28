@@ -40,6 +40,7 @@ class IssueKind(StrEnum):
     # M2: 화면 글자 <-> 음성
     SCREEN_ONLY_INFO = "SCREEN_ONLY_INFO"
     SCREEN_VALUE_MISMATCH = "SCREEN_VALUE_MISMATCH"
+    NO_SPEECH_TO_COMPARE = "NO_SPEECH_TO_COMPARE"
     MENTIONED_ELSEWHERE = "MENTIONED_ELSEWHERE"
     ALWAYS_ON_SCREEN = "ALWAYS_ON_SCREEN"
     OCR_UNCERTAIN = "OCR_UNCERTAIN"
@@ -78,6 +79,7 @@ ISSUE_KIND_LABELS: dict[IssueKind, str] = {
     IssueKind.STT_UNCERTAIN: "음성 확인 필요",
     IssueKind.SCREEN_ONLY_INFO: "화면 정보 누락 의심",
     IssueKind.SCREEN_VALUE_MISMATCH: "화면 값 확인 필요",
+    IssueKind.NO_SPEECH_TO_COMPARE: "비교할 음성 없음",
     IssueKind.MENTIONED_ELSEWHERE: "전달 시점 확인 필요",
     IssueKind.ALWAYS_ON_SCREEN: "영상 내내 표시되는 정보",
     IssueKind.OCR_UNCERTAIN: "화면 확인 필요",
