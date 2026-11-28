@@ -278,8 +278,8 @@
   - **실행 조건**: M1(ANL-07)과 달리 자막 출처와 무관하게 실행한다(자막 출처가 NONE이어도 실행).
   - **짧은 날짜**: 기준인 화면 글자는 엄격하게 읽고, 비교 대상인 음성·자막의 핵심 정보는 짧은 날짜(`3.15`, `3/15`)도 날짜로 읽는다(`lenient_dates`).
   - **사전 처리**: 자막 출처가 OCR이고 자막 영역이 있으면, 자막 영역 안의 글자는 이미 자막으로 쓰였으므로 이 단계 대상에서 뺀다(`split_by_region`).
-  - **점검 대상에서 빠지는 화면 글자**: 핵심 정보(RUL-02)가 하나도 추출되지 않은 글자, 같은 시점의 자막과 비슷하면서 값도 모두 일치하는 글자("비슷함"은 자막에 포함되거나 유사도가 `screen_merge_similarity=0.85` 이상인 경우).
-  - **상시 표시 정보**: 표시 시간 ÷ `max(영상 길이, 1)`이 `always_visible_ratio=0.7` 이상이면, 영상 전체 음성에 없는 값이 있을 때 `ALWAYS_ON_SCREEN` / `REVIEW_REQUIRED`를 한 건만 올린다.
+  - **점검 대상에서 빠지는 화면 글자**: 핵심 정보(RUL-02)가 하나도 추출되지 않은 글자. 같은 시점의 자막과 같다는 이유로는 빼지 않는다. 지적을 낼 때 자막에도 있으면(자막에 포함되거나 유사도가 `screen_merge_similarity=0.85` 이상이고 값이 모두 일치) `evidence.also_in_subtitle=True`와 안내 문장을 덧붙인다.
+  - **상시 표시 정보**: 표시 시간 ÷ `max(영상 길이, 1)`이 `always_visible_ratio=0.7` 이상이면, 표시 구간 ±`screen_near_window_s` 안에서 말하지 않은 값이 있을 때 한 건만 올린다. 영상 전체에서 말하지 않은 값이 있으면 `ALWAYS_ON_SCREEN`, 모두 다른 시점에서는 말했으면 `MENTIONED_ELSEWHERE`이며 둘 다 `REVIEW_REQUIRED`다.
   - **일반 판정**: 표시 구간 ±`screen_near_window_s=5.0`초 안의 음성 값과 비교해 값마다 분류한다.
 
     | 분류 | 조건 |
@@ -300,7 +300,7 @@
 
   - **M2는 `ERROR`를 내지 않는다**: 값의 종류만 비교하므로 화면의 값과 근처에서 말한 값이 같은 대상인지 알 수 없다. MISMATCH의 사유는 "다릅니다"라고 단정하지 않고, 화면 값을 음성에서 확인하지 못했다는 것과 가까이서 말한 같은 종류의 값을 함께 보여 준다. 음성에 없는 화면 정보의 중요도도 판단하지 않는다(실증용 임시 규칙, `work-plan.md` 4.2). 이전에 저장한 분석의 판정과 사유는 바뀌지 않는다.
   - **강등**: 종류가 `SCREEN_VALUE_MISMATCH`나 `SCREEN_ONLY_INFO`이고 근처 음성 중 하나라도 `avg_logprob < -1.0`이면 `STT_UNCERTAIN` / `UNDETERMINED`로 바꾼다.
-  - **저신뢰 OCR**: `uncertain` 목록의 글자는 핵심 정보가 있고, 신뢰도가 유한수이고, 그 값 중 하나라도 전체 음성에 없을 때만 `OCR_UNCERTAIN` / `UNDETERMINED`로 올린다. 이 글자들은 자막 일치 제외와 상시 표시 판정을 거치지 않는다.
+  - **저신뢰 OCR**: `uncertain` 목록의 글자는 핵심 정보가 있고, 신뢰도가 유한수이고, 그 값 중 하나라도 표시 구간 ±`screen_near_window_s` 안의 음성에 없을 때 `OCR_UNCERTAIN` / `UNDETERMINED`로 올린다. 값이 모두 다른 시점의 음성에는 있으면 사유에 알리고 `evidence.spoken_elsewhere_only=True`를 남긴다. 이 글자들은 자막 표시와 상시 표시 판정을 거치지 않는다.
 - **출력**: `list[Issue]`(source=`M2`, 시간순)
 - **예외·실패 처리**: 판정 규칙 안에서 발생시키는 예외는 없다.
 - **구현 위치**: `analysis/screen_check.py`(`check_screen`), `analysis/subtitle_extract.py`(`split_by_region`), `pipeline.py`(`_analyze`)

@@ -4,9 +4,14 @@
 몸짓, 그래프의 의미)은 판정하지 않는다. 판정 순서(docs/project/implementation-plan.md):
 1. 가까운 창(표시 구간 ±5초)에서 값이 말해지면 정상.
 2. 영상 다른 곳에서만 말했으면 "다른 시점에 언급됨"(검수 필요) + 표시와 설명 시점의 간격.
+   멀리서 한 번 말했다는 이유로 조용히 통과시키지 않는다. 영상 내내 표시되는 글자와 인식이
+   불확실한 글자도 같다.
 3. 영상 전체에서 말하지 않았으면, 같은 종류의 다른 값을 가까이서 말했을 때 값 확인 필요,
    아니면 화면 전용 정보. 둘 다 검수 필요다.
 영상 내내 표시되는 중요 정보는 구간마다 반복하지 않고 한 건만 올린다.
+
+자막(외부 자막 파일이나 화면에서 추출한 자막)에 같은 글자가 있어도 음성 확인은 건너뛰지 않는다.
+자막에 있다는 것은 음성으로 전달됐다는 뜻이 아니다. 지적에는 자막에도 있다는 사실을 덧붙인다.
 
 이 점검은 오류(ERROR)를 내지 않는다. 값의 종류만 비교하므로 화면의 값과 가까이서 말한 값이 같은
 대상인지 알 수 없고(소득 기준액과 인상액도 둘 다 금액이다), 음성에 없는 화면 정보가 반드시
@@ -62,15 +67,15 @@ def _gap(text: ScreenText, segment: SpeechSegment) -> float:
     return max(0.0, segment.start_s - text.end_s, text.start_s - segment.end_s)
 
 
-def _matches_subtitle(
+def _in_subtitle(
     text: ScreenText,
     entities: list[Entity],
     cues: list[SubtitleCue],
     config: AnalysisConfig,
 ) -> bool:
-    """같은 시점에 자막으로 이미 전달되는 글자는 점검 대상이 아니다.
+    """같은 시점의 자막에도 이 글자가 있는가. 점검에서 빼는 데 쓰지 않고 지적에 덧붙인다.
 
-    글자가 비슷해도 자막의 값(전화번호·날짜 등)이 화면과 다르면 제외하지 않는다.
+    글자가 비슷해도 자막의 값(전화번호·날짜 등)이 화면과 다르면 같은 내용으로 보지 않는다.
     """
     norm = normalize_text(text.text)
     if not norm:
@@ -154,8 +159,77 @@ def _evidence(entities: list[Entity], items: list[_Item]) -> dict[str, object]:
     }
 
 
+_ALSO_IN_SUBTITLE = " 같은 내용이 자막에도 있습니다. 음성으로도 전달되는지 확인하세요."
+
+
+def _near(
+    text: ScreenText, speech: list[_SpeechEntities], window: float
+) -> list[_SpeechEntities]:
+    """표시 구간 ±window초와 겹치는 음성."""
+    return [
+        se
+        for se in speech
+        if se.segment.end_s >= text.start_s - window
+        and se.segment.start_s <= text.end_s + window
+    ]
+
+
 def _confidence(text: ScreenText) -> float:
     return round(min(1.0, max(0.0, text.confidence)), 3)
+
+
+def _unspoken_while_shown(
+    text: ScreenText,
+    entities: list[Entity],
+    near: list[_SpeechEntities],
+    speech: list[_SpeechEntities],
+) -> list[_Item]:
+    """영상 내내 표시되는 값 가운데 표시되는 동안(±창) 말하지 않은 것."""
+    near_entities = [e for se in near for e in se.entities]
+    items: list[_Item] = []
+    for entity in entities:
+        if any(entities_equal(entity, other) for other in near_entities):
+            continue
+        gaps = [
+            _gap(text, se.segment)
+            for se in speech
+            if any(entities_equal(entity, other) for other in se.entities)
+        ]
+        items.append(
+            _Item("ELSEWHERE", entity, gap_s=min(gaps)) if gaps else _Item("ONLY", entity)
+        )
+    return items
+
+
+def _always_visible_issue(
+    text: ScreenText, entities: list[Entity], items: list[_Item], in_subtitle: bool
+) -> Issue:
+    """상시 표시 정보는 값이 여럿이어도 한 건이다."""
+    unspoken = [item.entity for item in items if item.kind == "ONLY"]
+    parts: list[str] = []
+    if unspoken:
+        names = ", ".join(f"{ENTITY_KIND_LABELS[e.kind]} '{e.raw}'" for e in unspoken)
+        parts.append(f"영상 내내 표시되는 {names}을(를) 음성에서 확인하지 못했습니다.")
+    parts += [_describe(item) for item in items if item.kind == "ELSEWHERE"]
+    reason = " / ".join(parts)
+    evidence = _evidence(entities, items)
+    gaps = [item.gap_s for item in items if item.gap_s is not None]
+    if gaps:
+        evidence["gap_s"] = min(gaps)
+    if in_subtitle:
+        evidence["also_in_subtitle"] = True
+        reason += _ALSO_IN_SUBTITLE
+    return Issue(
+        source=IssueSource.M2,
+        kind=IssueKind.ALWAYS_ON_SCREEN if unspoken else IssueKind.MENTIONED_ELSEWHERE,
+        verdict=Verdict.REVIEW_REQUIRED,
+        start_s=text.start_s,
+        end_s=text.end_s,
+        reason=reason,
+        comparison_text=text.text,
+        confidence=_confidence(text),
+        evidence=evidence,
+    )
 
 
 def check_screen(
@@ -175,36 +249,17 @@ def check_screen(
 
     for text in texts:
         entities = extract_entities(text.text)
-        if not entities or _matches_subtitle(text, entities, cues, config):
+        if not entities:
             continue
+        in_subtitle = _in_subtitle(text, entities, cues, config)
+        near_segments = _near(text, speech_entities, config.screen_near_window_s)
 
         if (text.end_s - text.start_s) / max(duration_s, 1.0) >= config.always_visible_ratio:
-            missing = [e for e in entities if not any(entities_equal(e, o) for o in all_speech)]
-            if missing:
-                items = [_Item("ONLY", e) for e in missing]
-                names = ", ".join(f"{ENTITY_KIND_LABELS[e.kind]} '{e.raw}'" for e in missing)
-                issues.append(
-                    Issue(
-                        source=IssueSource.M2,
-                        kind=IssueKind.ALWAYS_ON_SCREEN,
-                        verdict=Verdict.REVIEW_REQUIRED,
-                        start_s=text.start_s,
-                        end_s=text.end_s,
-                        reason=f"영상 내내 표시되는 {names}을(를) 음성에서 확인하지 못했습니다.",
-                        comparison_text=text.text,
-                        confidence=_confidence(text),
-                        evidence=_evidence(entities, items),
-                    )
-                )
+            items = _unspoken_while_shown(text, entities, near_segments, speech_entities)
+            if items:
+                issues.append(_always_visible_issue(text, entities, items, in_subtitle))
             continue
 
-        window = config.screen_near_window_s
-        near_segments = [
-            se
-            for se in speech_entities
-            if se.segment.end_s >= text.start_s - window
-            and se.segment.start_s <= text.end_s + window
-        ]
         near_entities = [e for se in near_segments for e in se.entities]
         items = _classify(text, entities, near_entities, speech_entities)
         if not items:
@@ -222,6 +277,9 @@ def check_screen(
         verdict = Verdict.REVIEW_REQUIRED
         reason = " / ".join(_describe(item) for item in items)
         evidence = _evidence(entities, items)
+        if in_subtitle:
+            evidence["also_in_subtitle"] = True
+            reason += _ALSO_IN_SUBTITLE
         gaps = [item.gap_s for item in items if item.gap_s is not None]
         if gaps:
             evidence["gap_s"] = min(gaps)
@@ -252,13 +310,25 @@ def check_screen(
             )
         )
 
-    # 신뢰도가 낮게 읽힌 글자: 값이 있고 음성에도 없을 때만 '화면 확인 필요'로 올린다.
+    # 신뢰도가 낮게 읽힌 글자: 값이 있고 표시 구간 주변의 음성에 없을 때 '화면 확인 필요'로 올린다.
     for text in uncertain:
         entities = extract_entities(text.text)
         if not entities or not math.isfinite(text.confidence):
             continue
-        if all(any(entities_equal(e, o) for o in all_speech) for e in entities):
+        near = [
+            e
+            for se in _near(text, speech_entities, config.screen_near_window_s)
+            for e in se.entities
+        ]
+        if all(any(entities_equal(e, o) for o in near) for e in entities):
             continue
+        reason = "자동 판단 불가: 화면 확인 필요 (글자 인식이 불확실합니다)."
+        noted: dict[str, object] = {
+            "entities": [{"kind": e.kind.value, "raw": e.raw} for e in entities]
+        }
+        if all(any(entities_equal(e, o) for o in all_speech) for e in entities):
+            noted["spoken_elsewhere_only"] = True
+            reason += " 같은 값은 다른 시점의 음성에서만 확인됩니다."
         issues.append(
             Issue(
                 source=IssueSource.M2,
@@ -266,10 +336,10 @@ def check_screen(
                 verdict=Verdict.UNDETERMINED,
                 start_s=text.start_s,
                 end_s=text.end_s,
-                reason="자동 판단 불가: 화면 확인 필요 (글자 인식이 불확실합니다).",
+                reason=reason,
                 comparison_text=text.text,
                 confidence=_confidence(text),
-                evidence={"entities": [{"kind": e.kind.value, "raw": e.raw} for e in entities]},
+                evidence=noted,
             )
         )
 
