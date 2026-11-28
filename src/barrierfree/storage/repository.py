@@ -16,7 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from barrierfree.config import AnalysisConfig
+from barrierfree import __version__
+from barrierfree.config import FRAME_SKIP_METHOD, RULES_VERSION, AnalysisConfig
 from barrierfree.media.ffmpeg import VideoInfo
 from barrierfree.models import (
     AnalysisNote,
@@ -190,7 +191,15 @@ class Repository:
                     stt_model_name,
                     ocr_engine_name,
                     compute_device,
-                    json.dumps(config.to_snapshot(), ensure_ascii=False),
+                    json.dumps(
+                        {
+                            **config.to_snapshot(),
+                            "app_version": __version__,
+                            "rules_version": RULES_VERSION,
+                            "ocr_frame_skip": FRAME_SKIP_METHOD,
+                        },
+                        ensure_ascii=False,
+                    ),
                     _now(),
                 ),
             )
@@ -244,6 +253,14 @@ class Repository:
                     "UPDATE analysis_session SET status = ? WHERE id = ?",
                     (status.value, session_id),
                 )
+
+    def set_compute_device(self, session_id: str, device: str) -> None:
+        """받아쓰기에 실제로 쓴 장치. 시작할 때의 장치에서 바뀐 경우에만 부른다."""
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE analysis_session SET compute_device = ? WHERE id = ?",
+                (device, session_id),
+            )
 
     def set_subtitle(
         self,

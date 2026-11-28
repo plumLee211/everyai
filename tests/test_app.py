@@ -58,7 +58,7 @@ def test_build_services_creates_the_data_layout(tmp_path: Path) -> None:
 def test_recommendation_follows_the_device(tmp_path: Path) -> None:
     services = build_services(tmp_path, FakeDialogs(), device=GPU)
     try:
-        assert (services.recommendation.model, services.recommendation.device) == ("medium", "cuda")
+        assert (services.recommendation.model, services.recommendation.device) == ("small", "cuda")
     finally:
         services.repo.close_all()
 

@@ -27,6 +27,7 @@ from barrierfree.models import (
 )
 from barrierfree.storage.compare_data import load_compare_data
 from barrierfree.storage.export import export_csv, export_notes_csv, notes_csv_path
+from barrierfree.storage.metrics_export import export_metrics_csv
 from barrierfree.storage.repository import Repository, SessionRecord
 
 
@@ -253,6 +254,18 @@ class ReviewState:
             return export_csv(self._repo, self.session_id, path)
         except (OSError, sqlite3.Error) as exc:
             raise ExportError(_EXPORT_FAILED) from exc
+
+    def suggested_metrics_name(self) -> str:
+        """영상 이름을 넣지 않는다. 지표 파일만 보내도 되게 하려는 것이다."""
+        return f"실증지표_{self.session_id[:8]}.csv"
+
+    def export_metrics(self, path: str | Path) -> Path:
+        try:
+            return export_metrics_csv(self._repo, self.session_id, self.compare_data(), path)
+        except (OSError, sqlite3.Error) as exc:
+            raise ExportError(
+                "실증 지표를 저장하지 못했습니다. 저장 위치를 바꿔 다시 시도해 주세요."
+            ) from exc
 
     def export_notes(self, results_path: str | Path) -> Path:
         """지적 CSV를 저장한 뒤 분석 상태 파일을 저장한다."""

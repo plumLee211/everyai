@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+# 판정 규칙의 버전. 지적이 달라지는 변경을 하면 올린다. 분석마다 저장해 결과를 비교할 때 쓴다.
+RULES_VERSION = "pilot-1"
+# OCR 프레임 생략 판단 방식의 이름. 방식이 바뀌면 생략되는 프레임이 달라진다.
+FRAME_SKIP_METHOD = "tile-max-6x8"
+
 
 @dataclass(frozen=True)
 class AnalysisConfig:
@@ -67,9 +72,10 @@ class AnalysisConfig:
     idle_threshold_s: float = 120.0
 
     # --- 모델 추천 규칙 (결정 Q5, 실측 전 임시값) ---
-    recommend_cuda_model: str = "medium"
+    # 실증 조건을 맞추려고 모든 PC에 같은 모델을 권장한다(가장 정확하다는 뜻이 아니다).
+    recommend_cuda_model: str = "small"
     recommend_cpu_model: str = "small"
-    recommend_low_ram_model: str = "base"
+    recommend_low_ram_model: str = "small"
     low_ram_threshold_gb: float = 8.0
 
     def to_snapshot(self) -> dict[str, object]:
