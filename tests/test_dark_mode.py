@@ -77,12 +77,15 @@ def test_default_colors_stay_light_and_readable(
 
 @pytest.mark.parametrize("current", [0, 1], ids=["첫-탭-선택", "둘째-탭-선택"])
 def test_both_tab_labels_are_readable(dark_app: QApplication, qtbot: QtBot, current: int) -> None:
+    # 작은 글자는 획이 가늘어, 글꼴에 따라 설정한 글자색 그대로인 픽셀이 하나도 없다(CI에서 확인).
+    # 색은 그대로 두고 크기만 키워서 잰다.
+    dark_app.setStyleSheet(dark_app.styleSheet() + "QTabBar::tab { font-size: 48px; }")
     tabs = QTabWidget()
     for name in ("문제 목록", "대조 보기"):
         tabs.addTab(QWidget(), name)
     qtbot.addWidget(tabs)
     tabs.setCurrentIndex(current)
-    tabs.resize(500, 200)
+    tabs.resize(900, 300)
     tabs.show()
     bar = tabs.tabBar()
     assert bar is not None
