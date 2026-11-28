@@ -51,6 +51,7 @@ from barrierfree.ui import theme
 from barrierfree.ui.compare_view import CompareView
 from barrierfree.ui.dialogs import Dialogs
 from barrierfree.ui.issue_model import ISSUE_ID_ROLE, IssueTableModel, format_time
+from barrierfree.ui.limits import LIMITS_TEXT, LIMITS_TITLE
 
 _STATUS_TONES = {
     ReviewStatus.UNREVIEWED: "warn",
@@ -109,6 +110,8 @@ class ReviewPage(QWidget):
         self.verdict_summary_label = QLabel("")
         self.new_analysis_button = QPushButton("새 영상 분석")
         self.export_button = QPushButton("CSV 내보내기")
+        self.metrics_button = QPushButton("지표 내보내기")
+        self.limits_button = QPushButton("점검 범위")
         self.notices_label = QLabel("")
         self.notices_label.setWordWrap(True)
 
@@ -177,6 +180,8 @@ class ReviewPage(QWidget):
         self._build_layout()
         self.new_analysis_button.clicked.connect(self.new_analysis_requested.emit)
         self.export_button.clicked.connect(self._export)
+        self.metrics_button.clicked.connect(self._export_metrics)
+        self.limits_button.clicked.connect(self._show_limits)
         self.confirm_button.clicked.connect(lambda: self._review(ReviewStatus.CONFIRMED))
         self.dismiss_button.clicked.connect(lambda: self._review(ReviewStatus.DISMISSED))
         self.reset_button.clicked.connect(lambda: self._review(ReviewStatus.UNREVIEWED))
@@ -194,7 +199,9 @@ class ReviewPage(QWidget):
         for widget in (self.unreviewed_label, self.confirmed_label, self.dismissed_label):
             top.addWidget(widget)
         top.addStretch(1)
+        top.addWidget(self.limits_button)
         top.addWidget(self.new_analysis_button)
+        top.addWidget(self.metrics_button)
         top.addWidget(self.export_button)
 
         list_card = theme.card((16, 16, 16, 16), 10)
@@ -323,6 +330,31 @@ class ReviewPage(QWidget):
         self._refresh_empty_label()
         self.tabs.setCurrentIndex(0)
         self.compare_view.set_content(state.compare_data(), state.issues, state.notes())
+
+    # ----- 실증 지표·안내 -----
+
+    def _export_metrics(self) -> None:
+        if self._state is None:
+            return
+        self.activity.emit()
+        path = self._dialogs.ask_save_csv(self._state.suggested_metrics_name())
+        if path is None:
+            return
+        try:
+            saved = self._state.export_metrics(path)
+        except ExportError as error:
+            self._dialogs.warn("내보내기 실패", str(error))
+            return
+        self._dialogs.info(
+            "저장 완료",
+            f"실증 지표를 저장했습니다: {saved}\n"
+            "발화, 화면 글자, 지적 사유, 영상 이름과 경로는 들어 있지 않습니다. "
+            "보내기 전에 내용을 확인해 주세요.",
+        )
+
+    def _show_limits(self) -> None:
+        self.activity.emit()
+        self._dialogs.info(LIMITS_TITLE, LIMITS_TEXT)
 
     # ----- 대조 보기 -----
 

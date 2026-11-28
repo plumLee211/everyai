@@ -17,12 +17,21 @@ from barrierfree.config import AnalysisConfig
 SUPPORTED_MODELS = ("tiny", "base", "small", "medium", "large-v3", "turbo")
 
 
+# 권장하지 않아도 설정에서 바꿔 쓸 수 있게 동봉한다. 배포본은 인터넷 없이 쓴다.
+_ALWAYS_BUNDLED = ("base", "small", "medium")
+
+
 def bundled_models(config: AnalysisConfig | None = None) -> tuple[str, ...]:
-    """배포본에 동봉되는 모델. 앱이 권장할 수 있는 모델과 같고 build/fetch_models.py가 받는다."""
+    """배포본에 동봉되는 모델(build/fetch_models.py가 받는다). 권장 모델은 모두 들어간다."""
     cfg = config or AnalysisConfig()
     return tuple(
         dict.fromkeys(
-            (cfg.recommend_low_ram_model, cfg.recommend_cpu_model, cfg.recommend_cuda_model)
+            (
+                *_ALWAYS_BUNDLED,
+                cfg.recommend_low_ram_model,
+                cfg.recommend_cpu_model,
+                cfg.recommend_cuda_model,
+            )
         )
     )
 
@@ -74,6 +83,10 @@ def recommend_model(info: DeviceInfo, config: AnalysisConfig) -> ModelRecommenda
             config.recommend_low_ram_model,
             "cpu",
             config.whisper_compute_type_cpu,
-            warning="메모리가 적어 작은 모델을 권장합니다. 인식 정확도가 낮을 수 있습니다.",
+            warning=(
+                "메모리가 8GB보다 적어 분석이 느리거나 메모리가 부족할 수 있습니다. "
+                "부족하면 설정에서 base로 바꿀 수 있지만, "
+                "base는 개발 영상에서 문장을 빠뜨렸습니다."
+            ),
         )
     return ModelRecommendation(config.recommend_cpu_model, "cpu", config.whisper_compute_type_cpu)

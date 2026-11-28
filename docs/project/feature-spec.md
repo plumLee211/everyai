@@ -74,6 +74,7 @@
 | REV-06 | 검수 시간 측정 | 활동한 시간만 세어 저장한다 | `ui/review_timer.py`, `ui/main_window.py` |
 | REV-07 | CSV 내보내기 | 검수 결과를 11열 CSV로 저장한다 | `storage/export.py`, `review_state.py` |
 | REV-08 | 대조 보기 | 음성 구간마다 화면 글자와 자막을 나란히 보여 준다 | `ui/compare_view.py`, `analysis/compare_rows.py` |
+| REV-09 | 실증 지표 내보내기·점검 범위 안내 | 영상 내용 없이 시간과 건수를 내보내고, 점검하지 않는 것을 알린다 | `storage/metrics_export.py`, `ui/limits.py` |
 | SET-01 | 분석 설정 변경 | 모델·모델 경로·자막 영역 비율을 바꾼다 | `ui/settings_dialog.py` |
 | SET-02 | 장치 감지와 모델 추천 | CPU·메모리·CUDA를 보고 음성 모델을 추천한다 | `engines/device.py` |
 | SET-03 | 설정 저장·복원 | 설정을 JSON으로 저장하고 잘못된 값은 기본값으로 되돌린다 | `settings.py` |
@@ -586,6 +587,16 @@
 - **예외·실패 처리**: 읽을 수 없는 자료는 없는 것으로 본다.
 - **구현 위치**: `analysis/compare_rows.py`, `storage/compare_data.py`, `ui/compare_view.py`, `ui/review_page.py`
 
+#### REV-09 실증 지표 내보내기·점검 범위 안내
+- **설명**: 실증에서 처리·검수 시간과 건수를 받고, 사용자가 도구의 한계를 알게 한다.
+- **입력**: [지표 내보내기], [점검 범위] 조작
+- **동작 규칙**
+  - 지표 CSV(`항목`, `값`; UTF-8 BOM): 분석 ID 앞 8자, 영상 지문 앞 12자, 분석 일시, 영상 길이, 앱·규칙 버전, 모델, 장치, 자막 출처, 상태, 검수 시간, 단계별 처리 시간과 캐시 사용, 지적 수(출처·유형·판정·검수 상태별), 안내 수, 누락 의심·미점검 시간(겹침은 한 번), 대조 보기 행·화면 글자 수. **발화, 화면 글자, 지적 사유, 영상 파일 이름과 경로는 넣지 않는다.** 기본 파일 이름은 `실증지표_<분석 ID 8자>.csv`다.
+  - [점검 범위]는 점검하지 않거나 놓칠 수 있는 것과, 지적이 없다는 것이 문제없음이 아니며 접근성 기준 충족을 보증하지 않는다는 안내를 보인다. 점검 규칙이 바뀌면 이 문구를 함께 고친다.
+- **출력**: CSV 파일 또는 안내 창
+- **예외·실패 처리**: 저장 실패는 "내보내기 실패"로 안내한다.
+- **구현 위치**: `storage/metrics_export.py`, `review_state.py`, `ui/review_page.py`, `ui/limits.py`
+
 ---
 
 ### 4.5 설정 (SET)
@@ -616,11 +627,11 @@
 
     | 순위 | 조건 | 모델 / 장치 / 연산 형식 |
     |---|---|---|
-    | 1 | CUDA 사용 가능 | `recommend_cuda_model`("medium") / cuda / float16 |
-    | 2 | 메모리 < `low_ram_threshold_gb`(8.0GB) | `recommend_low_ram_model`("base") / cpu / int8 + 경고 "메모리가 적어 작은 모델을 권장합니다…" |
+    | 1 | CUDA 사용 가능 | `recommend_cuda_model`("small") / cuda / float16 |
+    | 2 | 메모리 < `low_ram_threshold_gb`(8.0GB) | `recommend_low_ram_model`("small") / cpu / int8 + 경고 "메모리가 8GB보다 적어 분석이 느리거나 메모리가 부족할 수 있습니다…(base로 바꿀 수 있으나 개발 영상에서 문장을 빠뜨렸다)" |
     | 3 | 그 외 | `recommend_cpu_model`("small") / cpu / int8 |
 
-  - `bundled_models(config)`: 추천 모델 3종을 중복 없이 모은다(기본값 base, small, medium). 설정 화면의 "(내려받기 필요)" 판단과 배포본의 모델 동봉 대상에 쓰인다.
+  - 권장 모델은 실증 조건을 맞추려고 모든 장치에서 같다(가장 정확하다는 뜻이 아니다). `bundled_models(config)`: 설정에서 바꿔 쓸 수 있게 base, small, medium은 항상 넣고 권장 모델을 더한다(중복 제거). 설정 화면의 "(내려받기 필요)" 판단과 배포본의 모델 동봉 대상에 쓰인다.
   - 추천값은 모두 실측 전 임시값이다.
 - **출력**: `ModelRecommendation(model, device, compute_type, warning)`
 - **예외·실패 처리**: CUDA 감지 중 발생한 예외만 "CUDA 없음"으로 처리한다. CPU 이름·코어 수·메모리 조회가 실패하면 처리 없이 예외가 그대로 전파된다.
@@ -657,6 +668,8 @@
   - **연결**: timeout 5초, `foreign_keys=ON`, `busy_timeout=5000`. 메모리 DB가 아니면 WAL 모드. 결과 행은 `sqlite3.Row`. **스레드마다 별도 연결**을 둔다.
   - **마이그레이션**: `PRAGMA user_version`으로 관리한다(현재 `SCHEMA_VERSION=2`). 버전이 1보다 작으면 V1, 2보다 작으면 V2(`analysis_note` 표 추가, 기존 표는 그대로) 스크립트를 실행한다. **버전 1의 DB는 올리기 전에** `db-backup/<시각>-v1/`에 사본을 만들며(올린 DB는 이전 버전의 앱이 열지 못한다), 사본을 만들지 못하면 올리지 않고 `OSError`를 낸다. 데이터 잠금을 얻지 못하면(다른 창이 실행 중일 수 있음) 올리지 않고 앱을 모두 닫으라고 알린다. 올렸을 때는 사본 위치를 한 번 안내한다. 2보다 크면 `RuntimeError`("데이터베이스가 더 최신 버전…")를 낸다.
   - 시간 구간은 ms 정수, 시각은 UTC ISO 8601(밀리초, 끝에 `Z`)로 저장한다.
+  - 받아쓰기 중 GPU를 쓰지 못해 CPU로 전환하면 분석의 `compute_device`를 `cpu (cuda에서 전환)`으로 바꿔 저장한다.
+  - 분석의 설정 스냅샷에는 `app_version`(`barrierfree.__version__`), `rules_version`(`config.RULES_VERSION`, 지적이 달라지는 변경을 하면 올린다), `ocr_frame_skip`을 함께 저장한다.
   - **테이블**
 
     | 테이블 | 주요 컬럼과 의미 |
@@ -872,7 +885,7 @@
 | 자막 영역 | `subtitle_region_ratio = 0.25`, `subtitle_min_texts = 3`, `subtitle_min_changes_per_minute = 4.0`, `subtitle_changes_for_full_score = 10.0`, `subtitle_region_score_min = 0.5` | ANL-05, SET-01 |
 | 화면 의존 표현(M2-2) | `screen_dependent_phrases = ("보시는 것처럼", "보시다시피", "보시는 바와 같이", "화면에서", "화면과 같이", "이쪽으로", "저쪽으로", "다음과 같이", "이렇게 하시면")` | ANL-09 |
 | 검수 시간 | `idle_threshold_s = 120.0` | REV-06 |
-| 모델 추천 | `recommend_cuda_model = "medium"`, `recommend_cpu_model = "small"`, `recommend_low_ram_model = "base"`, `low_ram_threshold_gb = 8.0` | SET-02 |
+| 모델 추천 | `recommend_cuda_model = "small"`, `recommend_cpu_model = "small"`, `recommend_low_ram_model = "small"`, `low_ram_threshold_gb = 8.0` | SET-02 |
 | (쓰이지 않음) | `corner_logo_max_area_ratio = 0.05` | 부록 E 참고 |
 
 분석 설정 전체는 세션을 만들 때 JSON 스냅샷(`to_snapshot`)으로 `analysis_session.config_snapshot_json`에 기록된다(ANL-01). 튜플은 리스트로 바뀌어 저장된다.

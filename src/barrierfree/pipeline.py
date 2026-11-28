@@ -34,10 +34,9 @@ from barrierfree.analysis.subtitle_check import check_subtitles
 from barrierfree.analysis.subtitle_extract import extract_cues, split_by_region
 from barrierfree.analysis.subtitle_region import Rect, RegionEstimate, estimate_subtitle_region
 from barrierfree.cancel import CancelledError, CancelToken
-from barrierfree.config import AnalysisConfig
+from barrierfree.config import FRAME_SKIP_METHOD, AnalysisConfig
 from barrierfree.dev_artifacts import DevArtifacts
 from barrierfree.engines.ocr import (
-    FRAME_SKIP_METHOD,
     Frame,
     OcrBox,
     OcrError,
@@ -429,6 +428,9 @@ class AnalysisPipeline:
                 segments_to_payload,
                 segments_from_payload,
             )
+            if getattr(self._stt, "fell_back_to_cpu", False):
+                # GPU를 쓰지 못해 CPU로 인식했다. 처리 시간을 GPU의 것으로 읽지 않게 남긴다.
+                repo.set_compute_device(session_id, "cpu (cuda에서 전환)")
             if self._dev is not None:
                 self._dev.save_speech_srt(dev_mp3, speech, notices)
             if not speech:
