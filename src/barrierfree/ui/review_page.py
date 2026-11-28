@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSplitter,
     QTableView,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -47,6 +48,7 @@ from barrierfree.review_state import (
     SaveError,
 )
 from barrierfree.ui import theme
+from barrierfree.ui.compare_view import CompareView
 from barrierfree.ui.dialogs import Dialogs
 from barrierfree.ui.issue_model import ISSUE_ID_ROLE, IssueTableModel, format_time
 
@@ -217,11 +219,20 @@ class ReviewPage(QWidget):
         splitter = QSplitter()
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(12)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(list_card, "문제 목록")
+        self.compare_view = CompareView()
+        self.tabs.addTab(self.compare_view, "대조 보기")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        self.compare_view.seek_requested.connect(self._seek_from_compare)
+        self.compare_view.issue_requested.connect(self._open_issue)
+        self.compare_view.activity.connect(self.activity)
         splitter.addWidget(left)
-        splitter.addWidget(list_card)
+        splitter.addWidget(self.tabs)
         splitter.setSizes([60, 40])  # 좌 약 60%, 우 약 40%
 
         detail = theme.card((16, 14, 16, 14), 10)
+        self.detail_card = detail
         detail_layout = detail.layout()
         assert isinstance(detail_layout, QVBoxLayout)
         head = QHBoxLayout()
@@ -310,6 +321,31 @@ class ReviewPage(QWidget):
         self._refresh_summary()
         self._show_detail(None)
         self._refresh_empty_label()
+        self.tabs.setCurrentIndex(0)
+        self.compare_view.set_content(state.compare_data(), state.issues, state.notes())
+
+    # ----- 대조 보기 -----
+
+    def _on_tab_changed(self, index: int) -> None:
+        self.detail_card.setVisible(index == 0)  # 상세와 확정·기각은 문제 목록의 것이다
+        if not self._loading and self._state is not None:
+            self.activity.emit()
+
+    def _seek_from_compare(self, seconds: float) -> None:
+        self.player.seek(seconds)  # 이동만 하고 재생하지 않는다
+
+    def _open_issue(self, issue_id: str) -> None:
+        if self._state is None:
+            return
+        self.tabs.setCurrentIndex(0)
+        for combo in (self.group_filter, self.status_filter, self.verdict_filter):
+            combo.setCurrentIndex(0)  # 필터에 가려진 지적도 보이게 한다
+        row = self._model.row_of(issue_id) if self._model else None
+        if row is None:
+            return
+        self.table_view.selectRow(row)
+        self._selected = issue_id
+        self._show_detail(self._state.get(issue_id))
 
     # ----- 선택·상세 -----
 

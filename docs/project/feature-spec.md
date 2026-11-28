@@ -73,6 +73,7 @@
 | REV-05 | 검수 요약과 안내문 | 처리 현황과 결과 해석 안내를 보여 준다 | `review_state.py`, `ui/review_page.py` |
 | REV-06 | 검수 시간 측정 | 활동한 시간만 세어 저장한다 | `ui/review_timer.py`, `ui/main_window.py` |
 | REV-07 | CSV 내보내기 | 검수 결과를 11열 CSV로 저장한다 | `storage/export.py`, `review_state.py` |
+| REV-08 | 대조 보기 | 음성 구간마다 화면 글자와 자막을 나란히 보여 준다 | `ui/compare_view.py`, `analysis/compare_rows.py` |
 | SET-01 | 분석 설정 변경 | 모델·모델 경로·자막 영역 비율을 바꾼다 | `ui/settings_dialog.py` |
 | SET-02 | 장치 감지와 모델 추천 | CPU·메모리·CUDA를 보고 음성 모델을 추천한다 | `engines/device.py` |
 | SET-03 | 설정 저장·복원 | 설정을 JSON으로 저장하고 잘못된 값은 기본값으로 되돌린다 | `settings.py` |
@@ -242,7 +243,7 @@
 - **구현 위치**: `pipeline.py`(`_resolve_ocr_subtitles`, `_remap_strip`, `RegionAction`, `RegionDecision`), `analysis/subtitle_region.py`(`estimate_subtitle_region`, `region_rect`, `in_rect`, `RegionEstimate`), `ui/region_dialog.py`(`RegionDialog`)
 
 #### ANL-06 OCR 자막 추출
-- **설명**: 확인된 자막 영역의 화면 글자를 자막 큐로 만들어 SRT 파일로 저장한다. 영역 밖 글자는 화면 정보 비교(ANL-08)의 대상으로 남긴다.
+- **설명**: 확인된 자막 영역의 화면 글자를 자막 큐로 만들어 SRT 파일로 저장한다. 화면 정보 비교(ANL-08)는 영역과 관계없이 모든 화면 글자를 본다.
 - **입력**: 자막 영역 안 화면 글자 목록(`ScreenText`, 신뢰도 0.5 이상인 확실한 글자만)
 - **동작 규칙**
   - `split_by_region`: 입력 순서를 유지하며 (영역 안, 영역 밖)으로 나눈다.
@@ -278,7 +279,7 @@
   - **범위**: 화면에 **표시된 문자 정보**가 음성으로 전달되는지만 본다. 화면해설(행동, 몸짓, 그래프의 의미 등)은 판정하지 않는다.
   - **실행 조건**: M1(ANL-07)과 달리 자막 출처와 무관하게 실행한다(자막 출처가 NONE이어도 실행).
   - **짧은 날짜**: 기준인 화면 글자는 엄격하게 읽고, 비교 대상인 음성·자막의 핵심 정보는 짧은 날짜(`3.15`, `3/15`)도 날짜로 읽는다(`lenient_dates`).
-  - **사전 처리**: 자막 출처가 OCR이고 자막 영역이 있으면, 자막 영역 안의 글자는 이미 자막으로 쓰였으므로 이 단계 대상에서 뺀다(`split_by_region`).
+  - **대상 범위**: 화면 글자는 위치(하단 자막 영역)나 자막과의 일치 때문에 빼지 않는다. 자막에서 이미 지적한 값과 겹치면 ANL-10에서 합친다.
   - **점검 대상에서 빠지는 화면 글자**: 핵심 정보(RUL-02)가 하나도 추출되지 않은 글자. 같은 시점의 자막과 같다는 이유로는 빼지 않는다. 지적을 낼 때 자막에도 있으면(자막에 포함되거나 유사도가 `screen_merge_similarity=0.85` 이상이고 값이 모두 일치) `evidence.also_in_subtitle=True`와 안내 문장을 덧붙인다.
   - **비교할 음성이 없음**: 음성 구간이 하나도 없으면(오디오 트랙 없음, 빈 받아쓰기) 핵심 정보가 있는 확실한 화면 글자마다 `NO_SPEECH_TO_COMPARE` / `UNDETERMINED`를 올리고, 아래의 상시 표시·일반 판정은 하지 않는다.
   - **상시 표시 정보**: 표시 시간 ÷ `max(영상 길이, 1)`이 `always_visible_ratio=0.7` 이상이면, 표시 구간 ±`screen_near_window_s` 안에서 말하지 않은 값이 있을 때 한 건만 올린다. 영상 전체에서 말하지 않은 값이 있으면 `ALWAYS_ON_SCREEN`, 모두 다른 시점에서는 말했으면 `MENTIONED_ELSEWHERE`이며 둘 다 `REVIEW_REQUIRED`다.
@@ -305,7 +306,7 @@
   - **저신뢰 OCR**: `uncertain` 목록의 글자는 핵심 정보가 있고, 신뢰도가 유한수이고, 그 값 중 하나라도 표시 구간 ±`screen_near_window_s` 안의 음성에 없을 때 `OCR_UNCERTAIN` / `UNDETERMINED`로 올린다. 값이 모두 다른 시점의 음성에는 있으면 사유에 알리고 `evidence.spoken_elsewhere_only=True`를 남긴다. 이 글자들은 자막 표시와 상시 표시 판정을 거치지 않는다.
 - **출력**: `list[Issue]`(source=`M2`, 시간순)
 - **예외·실패 처리**: 판정 규칙 안에서 발생시키는 예외는 없다.
-- **구현 위치**: `analysis/screen_check.py`(`check_screen`), `analysis/subtitle_extract.py`(`split_by_region`), `pipeline.py`(`_analyze`)
+- **구현 위치**: `analysis/screen_check.py`(`check_screen`), `analysis/duplicates.py`, `pipeline.py`(`_analyze`)
 
 #### ANL-09 화면 의존 표현 탐지(M2-2)
 - **설명**: 음성에 "보시다시피", "이쪽으로"처럼 화면을 봐야만 이해되는 표현이 있는지 찾는다.
@@ -325,6 +326,8 @@
 - **설명**: 모든 판정이 끝난 뒤 지적 목록을 한 번에 저장하고 세션을 완료 처리한다.
 - **입력**: M1, M2, M2-2 지적 목록
 - **동작 규칙**
+  - **겹치는 지적 합치기**(`analysis/duplicates.py`, M2-2 탐지 전에): M2의 `SCREEN_VALUE_MISMATCH`·`SCREEN_ONLY_INFO`·`MENTIONED_ELSEWHERE` 가운데 자막에도 있는 글자(`also_in_subtitle`)는, 시간이 겹치는 M1 지적이 ① 확인하지 못한 값을 모두 자막 쪽 값으로 가진 `VALUE_MISMATCH`이거나 ② 그 자막 문장을 비교한 지적(화면 글자의 0.7 이상이 비교 자막과 이어서 일치)이면 M2 지적을 내지 않고 M1 지적에 덧붙인다. M1의 유형과 판정은 그대로이며, 화면 글자와 M2 사유는 M1의 사유와 `evidence.screens`에 모두 남긴다. 해당하는 M1 지적이 없으면 둘 다 낸다.
+  - **대조 자료 저장**(`storage/compare_data.py`): 음성 구간, 병합한 화면 글자(확실·불확실 전부), 비교한 자막을 `<데이터 폴더>/artifacts/compare/<분석 id>.json`에 저장한다. 실패하면 안내(`COMPARE_DATA_FAILED`)만 남기고 분석은 완료한다.
   - 세 목록을 합쳐 (시작, 끝) 순으로 정렬한다.
   - **누락 의심 구간의 판정 낮추기**: 의심 구간과 겹치는 M1 지적, 표시 구간 ±`screen_near_window_s` 안에 의심 구간이 있는 M2의 `SCREEN_ONLY_INFO`·`SCREEN_VALUE_MISMATCH`·`MENTIONED_ELSEWHERE`는 `STT_UNCERTAIN` / `UNDETERMINED`로 바꾸고 `evidence`에 `downgraded_from`, `original_reason`, `speech_maybe_missed`를 남긴다. 지적은 지우지 않는다.
   - `complete_session`이 **한 트랜잭션**에서 지적과 분석 상태 안내를 모두 INSERT하고 세션 상태를 COMPLETED, 종료 시각을 기록한다.
@@ -544,7 +547,7 @@
 
 #### REV-06 검수 시간 측정
 - **설명**: 편집자가 검수에 쓴 **활동 시간**만 세어 분석 기록에 누적한다.
-- **입력**: 사용자 활동 신호(지적 선택, 필터 변경, 검수 처리, 재생·탐색 조작, 재생 중 1초마다, 내보내기)
+- **입력**: 사용자 활동 신호(지적 선택, 필터 변경, 검수 처리, 재생·탐색 조작, 재생 중 1초마다, 내보내기, 탭 전환과 대조 보기의 접기·이동)
 - **동작 규칙**
   - 검수 화면이 활성 창일 때만 시간이 쌓인다(창이 비활성이면 세지 않는다).
   - 활동 사이의 공백이 유휴 기준(`idle_threshold_s=120.0`초) 이상이면 그 공백은 통째로 뺀다.
@@ -568,6 +571,20 @@
 - **출력**: CSV 파일, "저장 완료 / 검수 결과를 저장했습니다: {경로}" 안내
 - **예외·실패 처리**: `OSError`·SQLite 오류는 `ExportError`(ERR-11)가 되고 "내보내기 실패"를 안내한다.
 - **구현 위치**: `storage/export.py`(`export_csv`, `format_time`, `_safe`), `review_state.py`(`ExportError`, `suggested_csv_name`), `ui/review_page.py`(`_export`)
+
+#### REV-08 대조 보기
+- **설명**: 음성 구간마다 같은 시간의 화면 글자와 자막을 위아래로 나란히 보여 준다. 일치나 정상을 판단하지 않는다.
+- **입력**: 분석의 대조 자료, 지적 목록, 분석 상태 안내
+- **동작 규칙**
+  - 검수 화면 오른쪽의 `[문제 목록] [대조 보기]` 탭. 아래 상세와 확정·기각은 문제 목록 탭에서만 보인다. 분석을 불러오면 문제 목록 탭으로 시작한다.
+  - 행: 음성 구간 하나가 한 행이다. 말이 없는 시간(1초 이상)은 새로 보이는 화면 글자나 자막이 있을 때만 행을 만들고 10초 단위로 나눈다.
+  - 화면 글자는 모두 **처음 보이는 행**에 한 번 나타나고, 이후 행에는 `계속 표시 n건 [보기]`로 남는다. 인식이 불확실한 글자는 `불확실 n건 [보기]`로 접는다. 행에서 보인 것으로 치려면 0.5초(또는 표시 시간의 절반) 이상 겹쳐야 한다.
+  - 지적은 한 행에만 `지적 n`으로 표시한다(화면 지적은 그 화면 글자가 처음 보이는 행, 그 밖에는 겹침 규칙으로 고른 첫 행). 누르면 필터를 풀고 문제 목록의 그 지적을 연다. 누락 의심 구간과 겹치는 행은 `음성 누락 의심`을 표시하며, 그 구간의 말 없는 행은 새로 보이는 것이 없어도 낸다. 계속 표시 목록의 불확실한 글자는 `(불확실)`을 붙인다.
+  - 행의 시각을 누르면 영상이 그 시각으로 이동한다(재생하지 않는다). 위에 행·화면 글자·불확실·자막의 건수와 "일치나 정상을 뜻하지 않습니다"를 항상 보인다.
+  - 대조 자료가 없으면(이전 버전의 분석, 저장 실패, 손상) 다시 분석하라고 안내한다.
+- **출력**: 화면 표시
+- **예외·실패 처리**: 읽을 수 없는 자료는 없는 것으로 본다.
+- **구현 위치**: `analysis/compare_rows.py`, `storage/compare_data.py`, `ui/compare_view.py`, `ui/review_page.py`
 
 ---
 

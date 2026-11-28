@@ -271,7 +271,9 @@ class MainWindow(QMainWindow):
         if self.is_analyzing:
             return
         try:
-            state = ReviewState(self._services.repo, session_id)
+            state = ReviewState(
+                self._services.repo, session_id, data_dir=self._services.data_dir
+            )
             record = state.session
         except (KeyError, sqlite3.Error):
             self._services.dialogs.warn("기록 열기 실패", "지난 분석 기록을 열 수 없습니다.")
@@ -392,7 +394,12 @@ class MainWindow(QMainWindow):
 
     def _on_succeeded(self, result: PipelineResult) -> None:
         self._finish_worker()
-        state = ReviewState(self._services.repo, result.session_id, extra_notices=result.notices)
+        state = ReviewState(
+            self._services.repo,
+            result.session_id,
+            extra_notices=result.notices,
+            data_dir=self._services.data_dir,
+        )
         self._review_state = state
         video = self._last_inputs[0] if self._last_inputs else None
         self.review_page.load(state, video)
