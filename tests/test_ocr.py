@@ -73,6 +73,37 @@ def test_run_ocr_skips_nearly_identical_frames_and_reuses_boxes() -> None:
     assert result[2].boxes[0].text == "둘째 화면"
 
 
+def _changed(width: int, height: int, *, x: int = 0, y: int = 600) -> np.ndarray:
+    picture = np.full((720, 1280, 3), 30, np.uint8)
+    picture[y : y + height, x : x + width] = 255
+    return picture
+
+
+@pytest.mark.parametrize(
+    ("width", "height"),
+    [
+        pytest.param(20, 30, id="숫자-한-글자-크기(0.07%)"),
+        pytest.param(60, 40, id="면적-0.3%"),
+        pytest.param(300, 60, id="자막-한-줄-일부(2.0%)"),
+    ],
+)
+def test_run_ocr_reads_again_when_only_a_small_area_changes(width: int, height: int) -> None:
+    # 화면 전체의 평균 변화로 판단하면 작은 영역의 변화는 묻힌다.
+    blank = np.full((720, 1280, 3), 30, np.uint8)
+    engine = FakeEngine()
+    run_ocr([(0.0, blank), (1.0, _changed(width, height))], engine, CFG)
+    assert engine.calls == 2
+
+
+def test_run_ocr_still_skips_faint_noise_over_the_whole_frame() -> None:
+    rng = np.random.default_rng(0)
+    base = np.full((720, 1280, 3), 120, np.uint8)
+    noisy = (base.astype(np.int16) + rng.integers(-3, 4, base.shape)).astype(np.uint8)
+    engine = FakeEngine()
+    run_ocr([(0.0, base), (1.0, noisy), (2.0, base)], engine, CFG)
+    assert engine.calls == 1
+
+
 def test_run_ocr_compares_against_last_processed_frame_not_previous_frame() -> None:
     # 프레임마다 1씩 천천히 밝아져도 누적 변화는 결국 감지되어야 한다.
     engine = FakeEngine()

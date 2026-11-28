@@ -41,7 +41,7 @@ from barrierfree.pipeline import (
     StageEvent,
     explain_error,
 )
-from barrierfree.storage.cache import FileCache
+from barrierfree.storage.cache import CacheType, FileCache, hash_file, make_key
 from barrierfree.storage.repository import Repository
 from tests.conftest import MakeVideo
 
@@ -486,6 +486,23 @@ def test_second_run_reuses_stt_and_ocr_results(env: Any, make_video: MakeVideo) 
     assert ocr.calls == ocr_calls_first
     metrics = {m.stage: m.cache_hit for m in env.repo.list_stage_metrics(second.session_id)}
     assert metrics["STT"] is True and metrics["OCR"] is True
+
+
+def test_ocr_cache_made_with_the_previous_skip_rule_is_not_reused(
+    env: Any, make_video: MakeVideo
+) -> None:
+    # 생략 판단 방식이 바뀌면 이전 방식으로 만든 관측은 생략된 프레임이 다르다.
+    video, srt = make_video(seconds=10), srt_for(env, SHOWN)
+    ocr = FakeOcr()
+    cfg = AnalysisConfig()
+    old_key = make_key(
+        hash_file(video), CacheType.OCR, ocr.engine_name, ocr.model_name,
+        {"mode": "full", "fps": cfg.screen_ocr_fps, "max_width": cfg.ocr_max_width,
+         "ratio": None, "diff": cfg.frame_diff_skip_threshold},
+    )
+    env.cache.put(old_key, [])
+    build(env, FakeStt(SPEECH), ocr, Scenes()).run(video, srt)
+    assert ocr.calls > 0
 
 
 def test_cache_with_an_unconvertible_integer_is_recomputed_not_fatal(

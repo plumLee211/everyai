@@ -26,6 +26,9 @@ Frame = NDArray[np.uint8]
 Rect = tuple[float, float, float, float]  # 정규화 좌표 (x, y, w, h), 0~1
 
 _DIFF_SIZE = (64, 36)
+_DIFF_TILES = (6, 8)  # (행, 열). 축소본 64x36을 8x6픽셀 칸으로 나눈다
+# 생략 판단 방식의 이름. 방식이 바뀌면 생략되는 프레임이 달라지므로 OCR 캐시 키에 넣는다.
+FRAME_SKIP_METHOD = "tile-max-6x8"
 _SAME_POSITION_DISTANCE = 0.25  # 같은 글자를 같은 자리로 볼 중심 거리(프레임 비율)
 # 같은 묶음 안에서 서로 바뀌면 뜻이 달라지는 조건어. 한글 한두 글자의 오인식은 흔해서, 글자 차이가
 # 아니라 목록의 낱말이 다른 낱말로 바뀐 경우만 다른 내용으로 본다. 목록 밖의 변화는 알아채지 못한다.
@@ -146,8 +149,18 @@ def _thumbnail(frame: Frame) -> NDArray[np.int16]:
 
 
 def frame_difference(a: Frame, b: Frame) -> float:
-    """두 프레임의 평균 밝기 차이(0~1). 크기가 달라도 같은 축소본으로 비교한다."""
-    return float(np.mean(np.abs(_thumbnail(a) - _thumbnail(b)))) / 255.0
+    """두 프레임에서 가장 많이 바뀐 칸의 평균 밝기 차이(0~1).
+
+    크기가 달라도 같은 축소본으로 비교한다.
+
+    화면 전체의 평균을 쓰면 자막 한 줄처럼 작은 영역의 변화가 묻혀, 바뀐 글자를 읽지 않고
+    직전 결과를 재사용하게 된다.
+    """
+    difference = np.abs(_thumbnail(a) - _thumbnail(b))
+    rows, cols = _DIFF_TILES
+    height, width = difference.shape
+    tiles = difference.reshape(rows, height // rows, cols, width // cols)
+    return float(tiles.mean(axis=(1, 3)).max()) / 255.0
 
 
 def run_ocr(
