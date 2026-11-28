@@ -426,6 +426,87 @@ def test_compound_money_units(text: str, expected: list[str]) -> None:
     assert values(text, K.MONEY) == expected
 
 
+@pytest.mark.parametrize(
+    ("text", "kind", "expected"),
+    [
+        # 만·억은 그 앞에 쌓인 수 전체에 곱한다: (2천 + 200) × 만
+        ("2천200만 원", K.MONEY, "22000000"),
+        ("3천500만원", K.MONEY, "35000000"),
+        ("3천5백만 원", K.MONEY, "35000000"),
+        ("1억 2천300만 원", K.MONEY, "123000000"),
+        ("5만천 원", K.MONEY, "51000"),
+        # 인원과 수치도 금액과 같은 방식으로 읽는다
+        ("2천200명", K.HEADCOUNT, "2200"),
+        ("2천명", K.HEADCOUNT, "2000"),
+        ("3만 명", K.HEADCOUNT, "30000"),
+        ("12만 5천 명", K.HEADCOUNT, "125000"),
+        ("2천200건", K.QUANTITY, "2200건"),
+        ("3만 개", K.QUANTITY, "30000개"),
+        ("1만 2천 회", K.QUANTITY, "12000회"),
+        ("1.5만 명", K.HEADCOUNT, "15000"),
+    ],
+)
+def test_digits_mixed_with_place_names(text: str, kind: EntityKind, expected: str) -> None:
+    assert values(text, kind) == [expected]
+
+
+@pytest.mark.parametrize(
+    ("text", "kind", "expected"),
+    [
+        ("2천200원", K.MONEY, "2200"),
+        ("5천30원", K.MONEY, "5030"),
+        ("1만5천원", K.MONEY, "15000"),
+        ("0원", K.MONEY, "0"),
+        ("1만억 원", K.MONEY, "1000000000000"),
+        ("200명", K.HEADCOUNT, "200"),
+    ],
+)
+def test_numbers_that_were_already_read_keep_their_value(
+    text: str, kind: EntityKind, expected: str
+) -> None:
+    assert values(text, kind) == [expected]
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["수천 명이 모였습니다", "2천 개국이 참여", "3만 개월", "1만 세대", "100만 대군", "3.5명"],
+)
+def test_place_names_do_not_turn_other_words_into_values(text: str) -> None:
+    assert [e for e in extract_entities(text) if e.kind in (K.QUANTITY, K.MONEY, K.HEADCOUNT)] == []
+
+
+@pytest.mark.parametrize(
+    ("spoken", "shown"),
+    [
+        ("지원금은 2200만 원입니다", "지원금 2천200만 원"),
+        ("참가자는 2000명입니다", "참가자 2천명"),
+        ("접수는 2200건입니다", "접수 2천200건"),
+    ],
+)
+def test_same_value_written_with_place_names_matches(spoken: str, shown: str) -> None:
+    diff = compare_entities(extract_entities(spoken), extract_entities(shown, lenient_dates=True))
+    assert diff.matched and not diff.mismatched and not diff.missing
+
+
+@pytest.mark.parametrize(
+    ("text", "kind", "expected"),
+    [
+        ("예산은 3만, 200명을 지원합니다", K.HEADCOUNT, ["200"]),
+        ("참가비 3만, 200원 추가", K.MONEY, ["200"]),
+        ("관람객 3만~5만 명 예상", K.HEADCOUNT, ["50000"]),
+        ("수수료는 3천·4천원입니다", K.MONEY, ["4000"]),
+        ("모집은 1만. 200건은 따로 받습니다", K.QUANTITY, ["200건"]),
+        # 천 단위 쉼표는 한 수의 일부다
+        ("지원금 3만 5,000원", K.MONEY, ["35000"]),
+        ("참가비 2,200만 원", K.MONEY, ["22000000"]),
+    ],
+)
+def test_numbers_separated_by_punctuation_are_not_joined(
+    text: str, kind: EntityKind, expected: list[str]
+) -> None:
+    assert values(text, kind) == expected
+
+
 def test_compound_money_difference_is_a_mismatch() -> None:
     diff = compare_entities(extract_entities("1억 5천만원"), extract_entities("2억원"))
     assert [(s.value, t.value) for s, t in diff.mismatched] == [("150000000", "200000000")]
