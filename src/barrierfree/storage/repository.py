@@ -19,15 +19,18 @@ from uuid import uuid4
 from barrierfree.config import AnalysisConfig
 from barrierfree.media.ffmpeg import VideoInfo
 from barrierfree.models import (
+    AnalysisNote,
     Issue,
     IssueKind,
     IssueSource,
+    NoteCode,
+    NoteSource,
     ReviewStatus,
     SessionStatus,
     SubtitleSource,
     Verdict,
 )
-from barrierfree.storage.db import connect, migrate
+from barrierfree.storage.db import backup_before_upgrade, connect, migrate, needs_upgrade
 
 logger = logging.getLogger(__name__)
 
@@ -110,13 +113,25 @@ def _to_session(row: sqlite3.Row) -> SessionRecord:
 
 
 class Repository:
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, *, allow_upgrade: bool = True) -> None:
+        """`allow_upgrade=False`는 이 데이터를 혼자 쓰는지 확인하지 못한 경우다."""
         self._path = Path(db_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
         self._all: list[sqlite3.Connection] = []
         self._lock = threading.Lock()
-        migrate(self.connection())
+        try:
+            if not allow_upgrade and needs_upgrade(self.connection()):
+                raise RuntimeError(
+                    "데이터 구조를 새로 바꿔야 하는데 다른 창에서 앱이 실행 중일 수 있습니다. "
+                    "앱을 모두 닫고 다시 실행해 주세요."
+                )
+            # 구조를 올렸다면, 올리기 전 사본의 폴더(앱이 사용자에게 알린다)
+            self.upgrade_backup = backup_before_upgrade(self.connection(), self._path)
+            migrate(self.connection())
+        except BaseException:
+            self.close_all()  # 남은 핸들은 Windows에서 파일 교체를 막는다
+            raise
 
     # ----- connection management -----
 
@@ -262,8 +277,10 @@ class Repository:
 
     # ----- issues -----
 
-    def complete_session(self, session_id: str, issues: Iterable[Issue]) -> None:
-        """지적 목록 저장과 COMPLETED 전환을 하나의 트랜잭션으로 처리한다."""
+    def complete_session(
+        self, session_id: str, issues: Iterable[Issue], notes: Iterable[AnalysisNote] = ()
+    ) -> None:
+        """지적 목록과 분석 상태 저장, COMPLETED 전환을 하나의 트랜잭션으로 처리한다."""
         now = _now()
         rows = [
             (
@@ -286,7 +303,24 @@ class Repository:
             )
             for i in issues
         ]
+        note_rows = [
+            (
+                session_id,
+                n.code.value,
+                n.source.value,
+                None if n.start_s is None else _ms(n.start_s),
+                None if n.end_s is None else _ms(n.end_s),
+                n.message,
+                now,
+            )
+            for n in notes
+        ]
         with self.connection() as conn:
+            conn.executemany(
+                "INSERT INTO analysis_note (session_id, code, source, start_ms, end_ms, message,"
+                " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                note_rows,
+            )
             conn.executemany(
                 "INSERT INTO issue (id, session_id, source, issue_kind, verdict, review_status,"
                 " severity, confidence, start_ms, end_ms, reason, speech_text, comparison_text,"
@@ -321,6 +355,22 @@ class Repository:
                 evidence=json.loads(r["evidence_json"]) if r["evidence_json"] else {},
             )
             for r in cur.fetchall()
+        ]
+
+    def list_notes(self, session_id: str) -> list[AnalysisNote]:
+        """저장한 순서의 분석 상태 안내."""
+        rows = self.connection().execute(
+            "SELECT * FROM analysis_note WHERE session_id = ? ORDER BY id", (session_id,)
+        ).fetchall()
+        return [
+            AnalysisNote(
+                code=NoteCode(r["code"]),
+                source=NoteSource(r["source"]),
+                message=r["message"],
+                start_s=None if r["start_ms"] is None else r["start_ms"] / 1000,
+                end_s=None if r["end_ms"] is None else r["end_ms"] / 1000,
+            )
+            for r in rows
         ]
 
     def set_review_status(self, issue_id: str, status: ReviewStatus) -> None:

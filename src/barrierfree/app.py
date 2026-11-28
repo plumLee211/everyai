@@ -147,7 +147,13 @@ def build_services(
 
     if repair_database:
         check_database(data_dir / DB_NAME, dialogs)
-    repo = Repository(data_dir / DB_NAME)
+    repo = Repository(data_dir / DB_NAME, allow_upgrade=repair_database)
+    if repo.upgrade_backup is not None:
+        dialogs.info(
+            "분석 기록을 새 구조로 바꿨습니다",
+            "이전 버전의 앱에서는 바꾼 기록을 열 수 없습니다.\n"
+            f"바꾸기 전 사본: {repo.upgrade_backup}",
+        )
     cache = FileCache(data_dir / "cache", repo)
     engines = _EngineCache(recommendation)
 

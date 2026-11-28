@@ -426,7 +426,18 @@ class ReviewPage(QWidget):
         except ExportError as error:
             self._dialogs.warn("내보내기 실패", str(error))
             return
-        self._dialogs.info("저장 완료", f"검수 결과를 저장했습니다: {saved}")
+        try:
+            notes = self._state.export_notes(saved)
+        except ExportError as error:
+            self._dialogs.warn(
+                "분석 상태 저장 실패", f"검수 결과는 저장했습니다: {saved}\n{error}"
+            )
+            return
+        self._dialogs.info(
+            "저장 완료",
+            f"검수 결과를 저장했습니다: {saved}\n"
+            f"분석 상태는 같은 폴더의 {notes.name}에 저장했습니다.",
+        )
 
     def _on_playback_failed(self, message: str) -> None:
         self.player_error_label.setText(

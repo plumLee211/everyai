@@ -19,6 +19,8 @@ from barrierfree.engines.stt import FasterWhisperEngine
 from barrierfree.media.ffmpeg import FfmpegNotFoundError
 from barrierfree.pipeline import AnalysisPipeline
 from barrierfree.settings import AppSettings
+from barrierfree.storage import db as db_module
+from barrierfree.storage.db import connect
 from barrierfree.storage.repository import Repository
 from tests.corrupt import corrupt_session_pk_index
 from tests.fakes import FakeDialogs
@@ -221,6 +223,29 @@ def test_a_second_instance_does_not_repair_the_database(tmp_path: Path) -> None:
 
     build_services(tmp_path, FakeDialogs(), device=CPU, repair_database=False).repo.close_all()
 
+    assert not (tmp_path / "db-backup").exists()
+
+
+def test_upgrading_old_data_tells_the_user_where_the_copy_is(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "barrierfree.db")
+    conn.executescript(db_module._V1)
+    conn.close()
+    dialogs = FakeDialogs()
+    build_services(tmp_path, dialogs, device=CPU).repo.close_all()
+    [(title, text)] = dialogs.infos
+    assert "새 구조" in title and "이전 버전" in text and "db-backup" in text
+
+    again = FakeDialogs()
+    build_services(tmp_path, again, device=CPU).repo.close_all()
+    assert again.infos == []
+
+
+def test_a_second_instance_does_not_upgrade_old_data(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "barrierfree.db")
+    conn.executescript(db_module._V1)
+    conn.close()
+    with pytest.raises(RuntimeError, match="모두 닫고"):
+        build_services(tmp_path, FakeDialogs(), device=CPU, repair_database=False)
     assert not (tmp_path / "db-backup").exists()
 
 

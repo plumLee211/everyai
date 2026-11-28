@@ -63,7 +63,16 @@ from barrierfree.media.ffmpeg import (
     validate_video,
 )
 from barrierfree.media.subtitles import LoadedSubtitle, SubtitleError, load_subtitle_file, write_srt
-from barrierfree.models import Issue, SessionStatus, SpeechSegment, SubtitleCue, SubtitleSource
+from barrierfree.models import (
+    AnalysisNote,
+    Issue,
+    NoteCode,
+    NoteSource,
+    SessionStatus,
+    SpeechSegment,
+    SubtitleCue,
+    SubtitleSource,
+)
 from barrierfree.storage.cache import CacheKey, CacheType, FileCache, hash_file, make_key
 from barrierfree.storage.repository import Repository
 
@@ -373,7 +382,12 @@ class AnalysisPipeline:
         media_started: float,
     ) -> PipelineResult:
         cfg, repo = self._config, self._repo
-        notices: list[str] = []
+        notes: list[AnalysisNote] = []
+        notices: list[str] = []  # 개발용 산출물 저장의 안내. 분석 상태가 아니라서 저장하지 않는다
+
+        def unchecked(code: NoteCode, source: NoteSource, message: str) -> AnalysisNote:
+            return AnalysisNote(code, source, message, 0.0, info.duration_s)
+
         repo.set_status(session_id, SessionStatus.ANALYZING)
 
         # 1. 영상 준비
@@ -409,8 +423,17 @@ class AnalysisPipeline:
             )
             if self._dev is not None:
                 self._dev.save_speech_srt(dev_mp3, speech, notices)
+            if not speech:
+                notes.append(unchecked(
+                    NoteCode.EMPTY_TRANSCRIPT, NoteSource.STT,
+                    "음성 인식 결과가 없습니다. "
+                    "말이 없었는지 인식하지 못했는지 구분할 수 없습니다.",
+                ))
         else:
-            notices.append("영상에 오디오 트랙이 없어 음성 인식을 건너뛰었습니다.")
+            notes.append(unchecked(
+                NoteCode.NO_AUDIO, NoteSource.STT,
+                "영상에 오디오 트랙이 없어 음성 인식을 건너뛰었습니다.",
+            ))
         self._measure(session_id, Stage.STT, started, cache_hit=stt_hit, count=len(speech),
                       unit="SEGMENT")
         self._emit(Stage.STT, "DONE", 1.0, "음성 인식을 마쳤습니다.")
@@ -429,6 +452,12 @@ class AnalysisPipeline:
                                        cancel, 0, passes)
         hits.append(hit)
         full = merge_observations(full_obs, cfg, 1.0 / cfg.screen_ocr_fps)
+        if not full.texts and not full.uncertain:
+            notes.append(AnalysisNote(
+                NoteCode.NO_SCREEN_TEXT, NoteSource.OCR,
+                "화면에서 글자를 읽지 못했습니다. "
+                "글자가 없었는지 읽지 못했는지 구분할 수 없습니다.",
+            ))
 
         cues: list[SubtitleCue] = []
         source = SubtitleSource.FILE
@@ -436,13 +465,14 @@ class AnalysisPipeline:
         if loaded is not None:
             cues = loaded.cues
             if loaded.skipped_blocks:
-                notices.append(
+                notes.append(AnalysisNote(
+                    NoteCode.SUBTITLE_PARTIAL, NoteSource.SUBTITLE,
                     f"자막 파일에서 {loaded.skipped_blocks}개 구간을 읽지 못했습니다. "
-                    "해당 구간은 점검에서 빠집니다."
-                )
+                    "해당 구간은 점검에서 빠집니다.",
+                ))
         else:
             source, cues, rect, scan_hits = self._resolve_ocr_subtitles(
-                session_id, path, info, sha, speech, cancel, notices
+                session_id, path, info, sha, speech, cancel, notes
             )
             hits.extend(scan_hits)
         self._measure(session_id, Stage.OCR, started, cache_hit=all(hits),
@@ -481,13 +511,13 @@ class AnalysisPipeline:
         started = time.perf_counter()
         self._emit(Stage.RESULT_SAVE, "RUNNING", None, "결과를 정리하는 중입니다.")
         issues = sorted(m1 + m2 + m2_dependent, key=lambda i: (i.start_s, i.end_s))
-        repo.complete_session(session_id, issues)
+        repo.complete_session(session_id, issues, notes)
         try:
             self._measure(session_id, Stage.RESULT_SAVE, started, count=len(issues), unit="ISSUE")
         except sqlite3.Error:
             pass  # 측정은 부가 정보다. 이미 저장·완료된 분석을 실패로 뒤집지 않는다.
         self._emit(Stage.RESULT_SAVE, "DONE", 1.0, "분석을 마쳤습니다.")
-        return PipelineResult(session_id, len(issues), source, notices)
+        return PipelineResult(session_id, len(issues), source, [n.message for n in notes] + notices)
 
     # ----- OCR -----
 
@@ -539,7 +569,7 @@ class AnalysisPipeline:
         sha: str,
         speech: list[SpeechSegment],
         cancel: CancelToken,
-        notices: list[str],
+        notes: list[AnalysisNote],
     ) -> tuple[SubtitleSource, list[SubtitleCue], Rect | None, list[bool]]:
         """자막 파일이 없을 때: 하단을 스캔하고 편집자가 영역을 확인하면 OCR 자막을 만든다."""
         cfg, repo = self._config, self._repo
@@ -562,7 +592,11 @@ class AnalysisPipeline:
 
         if decision.action is RegionAction.NONE:
             repo.set_subtitle(session_id, SubtitleSource.NONE, region={"decision": "NONE"})
-            notices.append("자막이 없는 영상입니다. 음성별 자막 누락은 개별로 표시하지 않습니다.")
+            notes.append(AnalysisNote(
+                NoteCode.SUBTITLE_NONE, NoteSource.SUBTITLE,
+                "자막이 없는 영상입니다. 음성별 자막 누락은 개별로 표시하지 않습니다.",
+                0.0, info.duration_s,
+            ))
             return SubtitleSource.NONE, [], None, hits
 
         rect = decision.rect or estimate.rect
@@ -578,9 +612,11 @@ class AnalysisPipeline:
         cues = extract_cues(inside)
         if not cues:
             repo.set_subtitle(session_id, SubtitleSource.NONE, region={"decision": "NONE"})
-            notices.append(
-                "확인한 자막 영역에서 글자를 찾지 못해 자막이 없는 것으로 처리했습니다."
-            )
+            notes.append(AnalysisNote(
+                NoteCode.SUBTITLE_NONE, NoteSource.SUBTITLE,
+                "확인한 자막 영역에서 글자를 찾지 못해 자막이 없는 것으로 처리했습니다.",
+                0.0, info.duration_s,
+            ))
             return SubtitleSource.NONE, [], None, hits
 
         relative = f"artifacts/subtitles/{session_id}.srt"
@@ -591,5 +627,8 @@ class AnalysisPipeline:
             generated_srt_path=relative,
             region={"decision": decision.action.value, "normalized_rect": list(rect)},
         )
-        notices.append("OCR로 추출한 자막으로 점검합니다. 이 모드의 결과는 모두 검수가 필요합니다.")
+        notes.append(AnalysisNote(
+            NoteCode.SUBTITLE_FROM_OCR, NoteSource.SUBTITLE,
+            "OCR로 추출한 자막으로 점검합니다. 이 모드의 결과는 모두 검수가 필요합니다.",
+        ))
         return SubtitleSource.OCR, cues, rect, hits
