@@ -202,8 +202,7 @@ def build_services(
 def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName(APP_NAME)
-    app.setStyle("Fusion")  # 시안 스타일시트가 플랫폼 기본 모양에 가려지지 않게 한다
-    app.setStyleSheet(theme.stylesheet())
+    theme.apply(app)
     dialogs = QtDialogs()
     data_dir = default_data_dir()
     configure_logging(data_dir)

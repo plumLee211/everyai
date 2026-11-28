@@ -7,7 +7,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 
 COLORS = {
     "primary": "#2F5BD0",
@@ -36,6 +37,36 @@ COLORS = {
 FONT_FAMILY = '"Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif'
 
 TONES = ("success", "warn", "danger", "info", "neutral")
+
+
+def palette() -> QPalette:
+    """Qt의 기본 색. 정하지 않으면 시스템의 다크 모드 색이 쓰여, 스타일시트가 칠하지 않는 곳에서
+    어두운 배경에 어두운 글자가 된다. 이 앱의 색은 밝은 화면 한 벌뿐이다."""
+    c = COLORS
+    role, group = QPalette.ColorRole, QPalette.ColorGroup
+    result = QPalette()
+    for target, name in (
+        (role.Window, "app_bg"), (role.WindowText, "text"),
+        (role.Base, "surface"), (role.AlternateBase, "tile_bg"), (role.Text, "text"),
+        (role.Button, "surface"), (role.ButtonText, "text"), (role.BrightText, "surface"),
+        (role.ToolTipBase, "surface"), (role.ToolTipText, "text"),
+        (role.PlaceholderText, "muted"),
+        (role.Highlight, "primary"), (role.HighlightedText, "surface"),
+        (role.Link, "primary"), (role.LinkVisited, "primary_hover"),
+        (role.Light, "surface"), (role.Midlight, "neutral_bg"), (role.Mid, "border"),
+        (role.Dark, "faint"), (role.Shadow, "muted"),
+    ):
+        result.setColor(target, QColor(c[name]))
+    for target in (role.WindowText, role.Text, role.ButtonText):
+        result.setColor(group.Disabled, target, QColor(c["faint"]))
+    return result
+
+
+def apply(app: QApplication) -> None:
+    """앱의 모양을 입힌다. 시스템이 다크 모드여도 같은 색이 나온다."""
+    app.setStyle("Fusion")  # 시안 스타일시트가 플랫폼 기본 모양에 가려지지 않게 한다
+    app.setPalette(palette())
+    app.setStyleSheet(stylesheet())
 
 
 def stylesheet() -> str:
@@ -125,6 +156,19 @@ QSlider::groove:horizontal {{ background: {c["neutral_bg"]}; height: 5px; border
 QSlider::sub-page:horizontal {{ background: {c["primary"]}; border-radius: 2px; }}
 QSlider::handle:horizontal {{ background: {c["surface"]}; border: 2px solid {c["primary"]};
     width: 12px; margin: -5px 0; border-radius: 7px; }}
+
+/* ---- 탭 ---- */
+QTabWidget::pane {{ border: 0; }}
+QTabBar::tab {{
+    background: {c["neutral_bg"]}; color: {c["neutral_fg"]};
+    border: 1px solid {c["border"]}; border-bottom: 2px solid {c["border"]};
+    border-top-left-radius: 8px; border-top-right-radius: 8px;
+    padding: 7px 16px; margin-right: 4px; font-weight: 600;
+}}
+QTabBar::tab:hover {{ color: {c["text"]}; }}
+QTabBar::tab:selected {{
+    background: {c["surface"]}; color: {c["primary"]}; border-bottom-color: {c["primary"]};
+}}
 
 /* ---- 문제 목록 ---- */
 QTableView {{ background: transparent; border: 0; gridline-color: transparent;
