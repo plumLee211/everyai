@@ -7,8 +7,9 @@
 - [`project/ui-spec.md`](project/ui-spec.md): 화면 동작 및 UI 요구사항
 - [`project/screen-overview.md`](project/screen-overview.md): 화면 구성 개요
 - [`project/database-design-draft.md`](project/database-design-draft.md): 구현 참고용 DB 설계 초안
+- [`project/feature-spec.md`](project/feature-spec.md): **현재 구현 기준** 기능 정의서(소스코드에 구현된 기능만, 기능별 입력·동작 규칙·출력·예외·구현 위치)
 
-제품 브리프와 화면 문서는 구현 전 작성된 요구사항 자료입니다. 현재 구현 범위와 동작은 코드와 테스트에서 확인하세요.
+제품 브리프와 화면 문서는 구현 전 작성된 요구사항 자료입니다. 현재 구현 범위와 동작은 `feature-spec.md`(소스코드 기준)와 코드, 테스트에서 확인하세요.
 
 `database-design-draft.md`는 초안입니다. 현재 스키마와 다를 수 있으므로 코드와 테스트를 최종 기준으로 삼으세요.
 

@@ -64,10 +64,13 @@ Mac에서는 설치 파일을 만들 수 없으므로 `.github/workflows/build-w
 
 1. `brew install python@3.11 ffmpeg` 후 `python3.11 -m venv .venv`
 2. `.venv/bin/pip install -r requirements.txt pyinstaller`
-3. 저장소 루트에 `ffmpeg/` 폴더를 만들고 `ffmpeg`, `ffprobe` 실행 파일(확장자 없음)을 둔다.
-   - 이 Mac에서만 쓰는 시험 빌드: `mkdir ffmpeg && cp "$(which ffmpeg)" "$(which ffprobe)" ffmpeg/`
-   - Homebrew의 ffmpeg는 Homebrew 라이브러리(dylib)에 의존해서 **다른 Mac에서는 실행되지 않는다.**
-     배포용은 정적 빌드(LGPL)를 구해 라이선스 고지와 함께 둔다.
+3. `ffmpeg`와 `ffprobe` 실행 파일(확장자 없음)을 준비한다. 빌드는 저장소 루트의 `ffmpeg/` 폴더를 기본으로 사용하며,
+   다른 위치를 쓰려면 `BARRIERFREE_FFMPEG_DIR`로 해당 폴더를 지정한다.
+   - Homebrew 바이너리는 Homebrew 라이브러리(dylib)에 의존해 다른 Mac에서는 실행되지 않는다. PyInstaller 번들에선
+     Qt의 FFmpeg 라이브러리와 이름이 겹쳐 로컬 분석도 실패할 수 있다.
+   - 실제 분석 테스트와 배포에는 CI와 같은 독립 실행 정적 빌드를 사용한다. 정적 빌드는 dylib 충돌을 피하고
+     다른 Mac에서도 실행할 수 있다. 배포 전 라이선스 고지를 확인한다.
+   - Homebrew 바이너리는 PyInstaller 패키징을 확인할 때만 사용하고, 영상 분석 검증에는 사용하지 않는다.
 4. 모델: Windows 절차 4번과 같다. 빌드가 자동으로 확인하고 없으면 내려받는다(약 2.1GB).
    패키징 구조만 확인하는 개발용 빌드는 `BARRIERFREE_SKIP_MODELS=1`로 모델 준비를 건너뛸 수 있다(배포 금지).
 
