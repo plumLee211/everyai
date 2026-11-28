@@ -4,9 +4,13 @@
 몸짓, 그래프의 의미)은 판정하지 않는다. 판정 순서(docs/project/implementation-plan.md):
 1. 가까운 창(표시 구간 ±5초)에서 값이 말해지면 정상.
 2. 영상 다른 곳에서만 말했으면 "다른 시점에 언급됨"(검수 필요) + 표시와 설명 시점의 간격.
-3. 영상 전체에서 말하지 않았으면, 같은 종류의 다른 값을 가까이서 말했을 때 값 불일치(오류),
-   아니면 화면 전용 정보(오류).
+3. 영상 전체에서 말하지 않았으면, 같은 종류의 다른 값을 가까이서 말했을 때 값 확인 필요,
+   아니면 화면 전용 정보. 둘 다 검수 필요다.
 영상 내내 표시되는 중요 정보는 구간마다 반복하지 않고 한 건만 올린다.
+
+이 점검은 오류(ERROR)를 내지 않는다. 값의 종류만 비교하므로 화면의 값과 가까이서 말한 값이 같은
+대상인지 알 수 없고(소득 기준액과 인상액도 둘 다 금액이다), 음성에 없는 화면 정보가 반드시
+전달되어야 하는 정보인지도 판단하지 않는다.
 """
 
 from __future__ import annotations
@@ -43,7 +47,10 @@ class _SpeechEntities:
 
 @dataclass(frozen=True)
 class _Item:
-    """화면 값 하나의 점검 결과. kind: ONLY(화면 전용) / MISMATCH(값 불일치) / ELSEWHERE(먼 곳)."""
+    """화면 값 하나의 점검 결과.
+
+    kind: ONLY(화면 전용) / MISMATCH(가까이서 같은 종류의 다른 값) / ELSEWHERE(먼 곳에서 언급).
+    """
 
     kind: str
     entity: Entity
@@ -112,7 +119,11 @@ def _classify(
 def _describe(item: _Item) -> str:
     label = ENTITY_KIND_LABELS[item.entity.kind]
     if item.kind == "MISMATCH" and item.counterpart is not None:
-        return f"{label}이(가) 다릅니다: 화면 '{item.entity.raw}' / 음성 '{item.counterpart.raw}'"
+        return (
+            f"화면의 {label} '{item.entity.raw}'을(를) 음성에서 확인하지 못했습니다. "
+            f"가까이서 말한 같은 종류의 값은 '{item.counterpart.raw}'입니다. "
+            "같은 대상인지 확인하세요."
+        )
     if item.kind == "ELSEWHERE":
         gap = item.gap_s or 0.0
         return (
@@ -207,8 +218,8 @@ def check_screen(
             if "ONLY" in kinds
             else IssueKind.MENTIONED_ELSEWHERE
         )
-        elsewhere_only = kind is IssueKind.MENTIONED_ELSEWHERE
-        verdict = Verdict.REVIEW_REQUIRED if elsewhere_only else Verdict.ERROR
+        unconfirmed = kind is not IssueKind.MENTIONED_ELSEWHERE  # 영상 어디서도 확인 못 한 값
+        verdict = Verdict.REVIEW_REQUIRED
         reason = " / ".join(_describe(item) for item in items)
         evidence = _evidence(entities, items)
         gaps = [item.gap_s for item in items if item.gap_s is not None]
@@ -220,7 +231,7 @@ def check_screen(
             and se.segment.avg_logprob < config.stt_avg_logprob_min
             for se in near_segments
         )
-        if verdict is Verdict.ERROR and stt_uncertain:
+        if unconfirmed and stt_uncertain:
             evidence["downgraded_from"] = kind.value
             evidence["original_reason"] = reason
             kind, verdict = IssueKind.STT_UNCERTAIN, Verdict.UNDETERMINED

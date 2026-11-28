@@ -77,7 +77,7 @@ ISSUE_KIND_LABELS: dict[IssueKind, str] = {
     IssueKind.EXPRESSION_DIFFERENCE: "표현 차이",
     IssueKind.STT_UNCERTAIN: "음성 확인 필요",
     IssueKind.SCREEN_ONLY_INFO: "화면 정보 누락 의심",
-    IssueKind.SCREEN_VALUE_MISMATCH: "화면 정보 불일치 의심",
+    IssueKind.SCREEN_VALUE_MISMATCH: "화면 값 확인 필요",
     IssueKind.MENTIONED_ELSEWHERE: "전달 시점 확인 필요",
     IssueKind.ALWAYS_ON_SCREEN: "영상 내내 표시되는 정보",
     IssueKind.OCR_UNCERTAIN: "화면 확인 필요",

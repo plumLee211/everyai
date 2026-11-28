@@ -84,12 +84,13 @@ def test_value_spoken_only_far_away_is_review_required_with_gap() -> None:
 
 
 # ---------- 화면 전용 / 값 불일치 ----------
+# 확인하지 못한 것을 '오류'로 단정하지 않는다. 화면 정보 비교는 대상이 같은지 알 수 없다.
 
 
-def test_value_never_spoken_is_screen_only_error() -> None:
+def test_value_never_spoken_is_screen_only_and_needs_review() -> None:
     [issue] = check([txt(PHONE, 60, 65)], [sp(62, 64, "궁금한 점은 담당 부서로 문의하세요")])
     assert issue.kind is IssueKind.SCREEN_ONLY_INFO
-    assert issue.verdict is Verdict.ERROR
+    assert issue.verdict is Verdict.REVIEW_REQUIRED
     assert "전화번호" in issue.reason
     assert issue.comparison_text == PHONE
     assert issue.speech_text == "궁금한 점은 담당 부서로 문의하세요"
@@ -105,8 +106,44 @@ def test_screen_only_when_there_is_no_speech_nearby() -> None:
 def test_different_value_of_same_kind_nearby_is_value_mismatch() -> None:
     [issue] = check([txt(PHONE, 60, 65)], [sp(62, 64, "문의는 02-1234-5679로 하세요")])
     assert issue.kind is IssueKind.SCREEN_VALUE_MISMATCH
-    assert issue.verdict is Verdict.ERROR
+    assert issue.verdict is Verdict.REVIEW_REQUIRED
     assert "5678" in issue.reason and "5679" in issue.reason
+
+
+def test_a_different_value_is_not_claimed_to_be_the_same_item() -> None:
+    # 같은 종류(금액)이지만 서로 다른 항목이다. 대상이 같은지 알 수 없으므로 '다르다'고 하지 않는다.
+    screen = [txt("지원 대상 소득 2200만 원 미만", 10, 15)]
+    [issue] = check(screen, [sp(11, 14, "소득 기준이 200만 원 올랐어요")])
+    assert issue.verdict is Verdict.REVIEW_REQUIRED
+    assert "다릅니다" not in issue.reason
+    assert "음성에서 확인하지 못했습니다" in issue.reason
+    assert "가까이서 말한 같은 종류의 값" in issue.reason
+    assert "같은 대상인지 확인" in issue.reason
+    [unmatched] = issue.evidence["unmatched"]  # type: ignore[misc]
+    assert unmatched["speech_value"] == "2000000"  # 비교한 값은 근거에 남긴다
+
+
+@pytest.mark.parametrize(
+    "spoken",
+    ["궁금한 점은 문의하세요", "문의는 02-1234-5679로 하세요"],
+    ids=["화면에만", "같은-종류의-다른-값"],
+)
+def test_screen_check_never_claims_a_confirmed_error(spoken: str) -> None:
+    issues = check([txt(PHONE, 60, 65)], [sp(62, 64, spoken)])
+    assert issues and all(i.verdict is not Verdict.ERROR for i in issues)
+
+
+@pytest.mark.parametrize(
+    ("spoken", "kind"),
+    [
+        ("문의는 02-1234-5679로 하세요", "SCREEN_VALUE_MISMATCH"),
+        ("문의는 담당 부서로", "SCREEN_ONLY_INFO"),
+    ],
+)
+def test_uncertain_stt_still_makes_both_findings_undetermined(spoken: str, kind: str) -> None:
+    [issue] = check([txt(PHONE, 60, 65)], [sp(62, 64, spoken, logprob=-1.6)])
+    assert issue.verdict is Verdict.UNDETERMINED
+    assert issue.evidence["downgraded_from"] == kind
 
 
 def test_value_spoken_elsewhere_beats_a_different_nearby_value() -> None:
@@ -217,7 +254,7 @@ def test_uncertain_ocr_without_values_is_silent() -> None:
     assert check([], [], uncertain=[txt("흐릿한 글자", 1, 2, conf=0.2)]) == []
 
 
-def test_uncertain_stt_nearby_downgrades_error_to_undetermined() -> None:
+def test_uncertain_stt_nearby_downgrades_to_undetermined() -> None:
     [issue] = check([txt(PHONE, 60, 65)], [sp(62, 64, "문의는 담당 부서로", logprob=-1.6)])
     assert issue.kind is IssueKind.STT_UNCERTAIN
     assert issue.verdict is Verdict.UNDETERMINED
