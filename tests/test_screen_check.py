@@ -164,17 +164,33 @@ def test_graph_numbers_missing_from_speech_are_reported_once() -> None:
     assert any("30%" in raw for raw in missing) and any("60%" in raw for raw in missing)
 
 
-# ---------- 제외 규칙 ----------
+# ---------- 자막에 있어도 음성 확인은 한다 ----------
+# 자막에 같은 글자가 있다는 것은 그 값이 음성으로 전달됐다는 뜻이 아니다.
 
 
-def test_text_identical_to_overlapping_subtitle_is_excluded() -> None:
+@pytest.mark.parametrize(
+    "cue_text",
+    ["문의 02-1234-5678", "자세한 문의 02-1234-5678 로 연락 주세요"],
+    ids=["같은-자막", "글자를-포함한-자막"],
+)
+def test_a_matching_subtitle_does_not_skip_the_speech_check(cue_text: str) -> None:
+    [issue] = check([txt(PHONE, 60, 65)], [sp(62, 64, "문의하세요")],
+                    [SubtitleCue(60, 65, cue_text)])
+    assert issue.kind is IssueKind.SCREEN_ONLY_INFO
+    assert issue.evidence["also_in_subtitle"] is True
+    assert "자막에도" in issue.reason
+
+
+def test_a_matching_subtitle_does_not_hide_a_different_spoken_value() -> None:
+    [issue] = check([txt("접수 마감 3월 9일", 10, 15)], [sp(11, 14, "접수는 3월 2일에 마감합니다")],
+                    [SubtitleCue(10, 15, "접수 마감 3월 9일")])
+    assert issue.kind is IssueKind.SCREEN_VALUE_MISMATCH
+    assert issue.evidence["also_in_subtitle"] is True
+
+
+def test_a_spoken_value_with_a_matching_subtitle_stays_silent() -> None:
     cues = [SubtitleCue(60, 65, "문의 02-1234-5678")]
-    assert check([txt(PHONE, 60, 65)], [sp(62, 64, "문의하세요")], cues) == []
-
-
-def test_subtitle_that_merely_contains_the_text_is_excluded() -> None:
-    cues = [SubtitleCue(60, 65, "자세한 문의 02-1234-5678 로 연락 주세요")]
-    assert check([txt(PHONE, 60, 65)], [sp(62, 64, "문의하세요")], cues) == []
+    assert check([txt(PHONE, 60, 65)], [sp(62, 64, "문의는 02-1234-5678입니다")], cues) == []
 
 
 def test_similar_subtitle_with_a_different_number_does_not_hide_the_screen_mismatch() -> None:
@@ -202,15 +218,11 @@ def test_a_subtitle_with_different_values_never_excludes_the_screen_text(
     assert issues, "값이 다른 자막은 화면 글자를 점검 대상에서 빼지 못한다"
 
 
-def test_subtitle_with_the_same_values_still_excludes_it() -> None:
-    cues = [SubtitleCue(10, 15, "자세한 문의 02-1234-5678 로 연락 주세요")]
-    assert check([txt(PHONE, 10, 15)], [sp(11, 14, "문의하세요")], cues) == []
-
-
-def test_subtitle_far_in_time_does_not_exclude() -> None:
+def test_subtitle_far_in_time_is_not_recorded() -> None:
     cues = [SubtitleCue(200, 205, "문의 02-1234-5678")]
     [issue] = check([txt(PHONE, 60, 65)], [sp(62, 64, "문의하세요")], cues)
     assert issue.kind is IssueKind.SCREEN_ONLY_INFO
+    assert "also_in_subtitle" not in issue.evidence
 
 
 def test_small_corner_logo_without_values_is_ignored_even_if_always_visible() -> None:
@@ -234,6 +246,21 @@ def test_always_visible_phone_spoken_anywhere_is_fine() -> None:
     assert check(screen, [sp(250, 253, "문의는 02-1234-5678입니다")]) == []
 
 
+def test_always_visible_value_spoken_only_while_not_shown_is_not_silently_passed() -> None:
+    screen = [txt("문의 02-1234-5678", 0, 220, box=CORNER)]  # 300초 중 220초 동안 표시
+    [issue] = check(screen, [sp(270, 273, "문의는 02-1234-5678입니다")])
+    assert issue.kind is IssueKind.MENTIONED_ELSEWHERE
+    assert issue.verdict is Verdict.REVIEW_REQUIRED
+    assert issue.evidence["gap_s"] == pytest.approx(50.0)
+
+
+def test_always_visible_mix_of_unspoken_and_far_values_is_one_issue() -> None:
+    screen = [txt("접수 4월 1일 문의 02-1234-5678", 0, 220, box=CORNER)]
+    [issue] = check(screen, [sp(270, 273, "문의는 02-1234-5678입니다")])
+    assert issue.kind is IssueKind.ALWAYS_ON_SCREEN
+    assert "4월 1일" in issue.reason and "5678" in issue.reason
+
+
 # ---------- 신뢰도 ----------
 
 
@@ -248,6 +275,15 @@ def test_uncertain_ocr_with_unspoken_value_is_undetermined() -> None:
 def test_uncertain_ocr_whose_value_is_spoken_is_silent() -> None:
     blurry = txt("문의 02-1234-5678", 60, 65, conf=0.3)
     assert check([], [sp(62, 64, "문의는 02-1234-5678입니다")], uncertain=[blurry]) == []
+
+
+def test_uncertain_ocr_whose_value_is_spoken_only_far_away_is_still_listed() -> None:
+    blurry = txt("문의 02-1234-5678", 60, 65, conf=0.3)
+    [issue] = check([], [sp(100, 102, "문의는 02-1234-5678입니다")], uncertain=[blurry])
+    assert issue.kind is IssueKind.OCR_UNCERTAIN
+    assert issue.verdict is Verdict.UNDETERMINED
+    assert "다른 시점" in issue.reason
+    assert issue.evidence["spoken_elsewhere_only"] is True
 
 
 def test_uncertain_ocr_without_values_is_silent() -> None:
